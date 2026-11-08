@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../web/reader.css">
+</head>
+<body data-theme="sepia">
+<section id="home" class="screen">
+  <input id="url-input"><button id="open-btn"></button><button id="import-txt"></button>
+  <div id="home-status" class="status-line"></div>
+  <button id="refresh-shelf"></button><div id="shelf"></div>
+  <select id="proxy-mode"><option value="system">s</option><option value="manual">m</option><option value="none">n</option></select>
+  <input id="proxy-manual" type="text">
+</section>
+<section id="reader" class="screen" hidden>
+  <header id="topbar"><div id="tb-title"></div><div id="tb-meta"></div><span id="tb-progress"></span></header>
+  <main id="viewport"><div id="content" class="content"></div><div id="loading" hidden></div><div id="error-bar" hidden></div></main>
+  <nav id="rail">
+    <button class="rail-btn" data-act="toc"></button><button class="rail-btn" data-act="theme"></button>
+    <button class="rail-btn" data-act="settings"></button><button class="rail-btn" data-act="tools"></button><button class="rail-btn" data-act="fullscreen"></button>
+    <button class="rail-btn" data-act="home"></button>
+  </nav>
+  <aside id="toc-drawer" class="drawer" hidden>
+    <div id="toc-book"></div><div id="toc-sub"></div><button data-close="toc-drawer"></button>
+    <input id="toc-search"><div id="toc-list" class="toc-list"></div>
+  </aside>
+  <aside id="settings-panel" class="drawer right" hidden>
+    <button data-close="settings-panel"></button>
+    <div id="theme-list">
+      <button class="swatch" data-theme-value="light"></button><button class="swatch" data-theme-value="sepia"></button>
+      <button class="swatch" data-theme-value="green"></button><button class="swatch" data-theme-value="dark"></button>
+      <button class="swatch" data-theme-value="custom"></button>
+    </div>
+    <label id="custom-bg-row" hidden><input id="custom-bg" type="color" value="#f5efe1"></label>
+    <select id="font-family"></select>
+    <input id="font-size" type="range" min="14" max="34" step="1"><output id="font-size-out"></output>
+    <input id="font-weight" type="range" min="300" max="700" step="100"><output id="font-weight-out"></output>
+    <input id="letter-spacing" type="range" min="0" max="0.2" step="0.01"><output id="letter-spacing-out"></output>
+    <input id="line-height" type="range" min="1.2" max="2.8" step="0.05"><output id="line-height-out"></output>
+    <input id="para-spacing" type="range" min="0" max="2" step="0.05"><output id="para-spacing-out"></output>
+    <input id="page-width" type="range" min="24" max="72" step="1"><output id="page-width-out"></output>
+    <input id="indent" type="checkbox"><input id="simplified" type="checkbox">
+    <select id="scroll-step-unit"><option value="line">l</option><option value="px">p</option></select>
+    <input id="scroll-step" type="range" min="1" max="20" step="1"><output id="scroll-step-out"></output>
+    <input id="request-interval" type="range" min="0.8" max="5" step="0.1"><output id="request-interval-out"></output>
+  </aside>
+  <aside id="tools-panel" class="drawer right" hidden>
+    <div id="tools-sub"></div>
+    <button data-close="tools-panel"></button>
+    <div id="txt-group" hidden>
+      <b id="txt-path"></b><b id="txt-enc-info"></b><b id="txt-count"></b>
+      <div id="txt-samples"></div>
+      <button id="txt-relocate"></button>
+      <select id="txt-enc">
+        <option value="auto">auto</option><option value="UTF-8">utf8</option><option value="GBK">gbk</option>
+        <option value="UTF-16LE">le</option><option value="UTF-16BE">be</option>
+      </select>
+      <input id="txt-regex" type="text">
+      <button id="txt-rescan"></button>
+    </div>
+    <div id="dl-group">
+      <select id="dl-scope">
+        <option value="all">all</option><option value="next">next</option><option value="range">range</option>
+      </select>
+      <div id="dl-next-row" hidden><input id="dl-next" type="number" value="50"></div>
+      <div id="dl-range-row" hidden><input id="dl-from" type="number" value="1"><input id="dl-to" type="number" value="50"></div>
+      <button id="dl-start"></button><button id="dl-pause" disabled></button>
+      <progress id="dl-progress" value="0" max="1"></progress>
+      <div id="dl-cache"></div>
+      <input id="dl-gap" type="number" min="0.5" max="60" step="0.5" value="2">
+      <div id="dl-est"></div>
+      <div id="dl-status"></div>
+      <select id="clr-scope"><option value="all">all</option><option value="range">range</option></select>
+      <div id="clr-range-row" hidden><input id="clr-from" type="number" value="1"><input id="clr-to" type="number" value="50"></div>
+      <button id="clr-run"></button>
+      <div id="clr-status"></div>
+    </div>
+    <div id="ex-group">
+      <select id="ex-scope">
+        <option value="all">all</option><option value="cached">cached</option><option value="range">range</option>
+      </select>
+      <div id="ex-range-row" hidden><input id="ex-from" type="number" value="1"><input id="ex-to" type="number" value="50"></div>
+      <select id="ex-enc">
+        <option value="utf8bom">bom</option><option value="utf8">utf8</option><option value="gbk">gbk</option>
+      </select>
+      <input id="ex-titles" type="checkbox" checked>
+      <input id="ex-simplified" type="checkbox" checked>
+      <input id="ex-fill" type="checkbox">
+      <button id="ex-start"></button><button id="ex-cancel" disabled></button>
+      <progress id="ex-progress" value="0" max="1"></progress>
+      <div id="ex-status"></div>
+    </div>
+  </aside>
+  <div id="dim" hidden></div>
+</section>
+<div id="toast" hidden></div>
+<div id="drop-overlay" hidden></div>
+
+<script>
+  window.__sent = [];
+  window.__errors = [];
+  const listeners = [];
+  window.chrome = { webview: {
+    postMessage: (o) => { window.__sent.push(o); onWebPost(o); },
+    addEventListener: (t, fn) => listeners.push(fn)
+  }};
+  function sendHost(o) {
+    listeners.forEach(f => { try { f({ data: o }); } catch (e) { window.__errors.push("handler:" + e.message); } });
+  }
+  window.sendHost = sendHost;
+  window.onerror = (m, s, l, c) => { window.__errors.push("onerror " + m + " @" + l + ":" + c); };
+  window.addEventListener("unhandledrejection", (e) => {
+    window.__errors.push("rejection " + (e.reason && (e.reason.stack || e.reason.message) || String(e.reason)));
+  });
+  function paras(n, tag) {
+    const a = [];
+    for (let i = 0; i < n; i++) a.push("深夜，寒风拂过。" + tag + " 這是測試段落" + i + "，用來說明排版效果，並且驗證簡繁轉換是否生效，順便檢查段距與行距的表現。");
+    return a;
+  }
+  function onWebPost(o) {
+    if (o.type === "needChapter") {
+      const i = o.index;
+      setTimeout(() => sendHost({
+        type: "chapter", index: i, title: "第" + (i + 1) + "章 測試章節", total: 100,
+        cached: i === 5,
+        paragraphs: paras(30, "CH" + i)
+      }), 0);
+    }
+  }
+  window.__settings = { theme: "sepia", customBg: "#f5efe1", fontFamily: "", fontSize: 19, fontWeight: 400,
+    lineHeight: 1.9, paraSpacing: 0.9, letterSpacing: 0.02, pageWidth: 40, indent: true,
+    scrollStepUnit: "line", scrollStep: 3, simplified: true, requestInterval: 1.2,
+    proxyMode: "system", proxyManual: "" };
+  window.__chapters = (() => { const a = []; for (let i = 0; i < 100; i++) a.push("第" + (i + 1) + "章 測試章節"); return a; })();
+</script>
+<script src="../web/s2t.js"></script>
+<script src="../web/reader.js"></script>
+<script>
+  const R = [];
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const ok = (name, cond, extra) => R.push((cond ? "PASS " : "FAIL ") + name + (extra ? " :: " + extra : ""));
+  const sent = () => window.__sent;
+  const asked = () => sent().filter(s => s.type === "needChapter").map(s => s.index);
+  const blocks = () => document.querySelectorAll("#content .chapter-block");
+  const key = (k, opt) => window.dispatchEvent(new KeyboardEvent("keydown", Object.assign({ key: k, bubbles: true }, opt || {})));
+  const vp = document.getElementById("viewport");
+
+  (async () => {
+   try {
+    await sleep(50);
+    sendHost({ type: "settings", value: window.__settings });
+    sendHost({ type: "books", items: [{ bookId: "67581", title: "測試書", author: "作者", cover: "",
+      url: "https://twkan.com/book/67581/index.html", total: 100, chapterIndex: 4, ratio: 0.25, updatedAt: 1 }] });
+    sendHost({ type: "book", meta: { bookId: "67581", title: "測試書", author: "作者", cover: "", category: "都市", status: "連載" },
+      total: 100, resumeIndex: 4, resumeRatio: 0.25, chapters: window.__chapters });
+    await sleep(400);
+
+    const ps = document.querySelectorAll("#content .chapter-body p");
+    ok("reader visible", !document.getElementById("reader").hidden);
+    ok("chapter rendered", blocks().length === 1 && ps.length === 30, "blocks=" + blocks().length + " p=" + ps.length);
+    ok("simplified applied", ps.length > 0 && ps[0].textContent.indexOf("测试") >= 0, ps.length ? ps[0].textContent.slice(0, 30) : "");
+    const tocRowH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--toc-row-h")) || 38;
+    const tocInnerEl = document.querySelector("#toc-list .toc-inner");
+    const tocRows = document.querySelectorAll("#toc-list .toc-item").length;
+    ok("toc spacer covers all chapters", !!tocInnerEl && Math.abs(parseFloat(tocInnerEl.style.height) - 100 * tocRowH) < 1,
+       tocInnerEl ? tocInnerEl.style.height : "no .toc-inner");
+    ok("toc virtualized (只渲染一个窗口)", tocRows > 0 && tocRows < 100, "rows=" + tocRows);
+    ok("toc active chapter", !!document.querySelector("#toc-list .toc-item.active"));
+    ok("topbar progress", /%$/.test(document.getElementById("tb-progress").textContent), document.getElementById("tb-progress").textContent);
+    ok("resume scroll restored", vp.scrollTop > 0, "scrollTop=" + Math.round(vp.scrollTop));
+
+    const a0 = vp.scrollTop;
+    key("ArrowDown");
+    await sleep(300);
+    const step = Math.round(vp.scrollTop - a0);
+    ok("ArrowDown scrolls one step", step > 40 && step < 260, "delta=" + step + " (3 lines)");
+
+    const a1 = vp.scrollTop;
+    key("ArrowUp");
+    await sleep(300);
+    ok("ArrowUp scrolls back", Math.abs(vp.scrollTop - (a1 - step)) < 12, "delta=" + Math.round(vp.scrollTop - a1));
+
+    const a2 = vp.scrollTop;
+    key(" ");
+    await sleep(350);
+    ok("Space scrolls one screen", vp.scrollTop - a2 > 200, "delta=" + Math.round(vp.scrollTop - a2));
+
+    const a3 = vp.scrollTop;
+    key(" ", { shiftKey: true });
+    await sleep(350);
+    ok("Shift+Space scrolls back", a3 - vp.scrollTop > 200, "delta=" + Math.round(vp.scrollTop - a3));
+
+    vp.scrollTop = vp.scrollHeight;
+    await sleep(700);
+    ok("auto appends next chapter", asked().indexOf(5) >= 0, "asked=" + JSON.stringify(asked()));
+    ok("second chapter in dom", blocks().length === 2, "blocks=" + blocks().length);
+    ok("cached chapter shows chip", !!document.querySelector('#content .chapter-block[data-index="5"] .ch-chip'));
+    const pEnd = sent().filter(s => s.type === "progress").slice(-1)[0];
+    ok("still at end of chapter 5", pEnd.index === 4 && pEnd.ratio > 0.8, JSON.stringify(pEnd));
+    const t5 = sent().filter(s => s.type === "title").slice(-1)[0];
+    ok("window title has book+chapter+pct", t5 && /· 第5章 · \d+%/.test(t5.text), t5 ? t5.text : "");
+
+    vp.scrollTop = 0;
+    await sleep(800);
+    ok("prepends previous chapter", asked().indexOf(4) >= 0, "asked=" + JSON.stringify(asked()));
+    ok("three chapters in dom", blocks().length === 3, "blocks=" + blocks().length);
+    ok("scroll kept after prepend", vp.scrollTop > 0, "scrollTop=" + Math.round(vp.scrollTop));
+
+    const curBefore = sent().filter(s => s.type === "progress").slice(-1)[0].index;
+    key("ArrowRight");
+    await sleep(800);
+    ok("ArrowRight jumps next chapter", asked().indexOf(curBefore + 1) >= 0, "cur=" + curBefore + " asked=" + JSON.stringify(asked()));
+    ok("jump resets to single chapter", blocks().length === 1, "blocks=" + blocks().length);
+
+    const askedBefore = asked().length;
+    key("ArrowUp");
+    await sleep(700);
+    ok("ArrowUp at top loads previous chapter", asked().length > askedBefore, "asked=" + JSON.stringify(asked()));
+    ok("previous chapter inserted above", blocks().length === 2, "blocks=" + blocks().length);
+    ok("scroll moved into inserted chapter", vp.scrollTop > 0, "scrollTop=" + Math.round(vp.scrollTop));
+
+    const fs = document.getElementById("font-size");
+    fs.value = "26";
+    fs.dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(300);
+    ok("font size applied", getComputedStyle(document.documentElement).getPropertyValue("--fs").trim() === "26px",
+      getComputedStyle(document.documentElement).getPropertyValue("--fs"));
+    ok("settings pushed to host", sent().filter(s => s.type === "setSetting").length > 0);
+
+    const ri = document.getElementById("request-interval");
+    ri.value = "3";
+    ri.dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(320);
+    const pushed = sent().filter(s => s.type === "setSetting").slice(-1)[0];
+    ok("request interval applied", document.getElementById("request-interval-out").textContent.indexOf("3.0") >= 0 &&
+      pushed.value.requestInterval === 3,
+      document.getElementById("request-interval-out").textContent + " pushed=" + pushed.value.requestInterval);
+
+    document.getElementById("simplified").checked = false;
+    document.getElementById("simplified").dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(300);
+    const p0 = document.querySelector("#content .chapter-body p");
+    ok("traditional restored", p0 && p0.textContent.indexOf("測試") >= 0, p0 ? p0.textContent.slice(0, 20) : "");
+
+    const unit = document.getElementById("scroll-step-unit");
+    unit.value = "px";
+    unit.dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(200);
+    ok("step unit px range", document.getElementById("scroll-step").max === "2000" &&
+      document.getElementById("scroll-step-out").textContent.indexOf("px") >= 0,
+      document.getElementById("scroll-step-out").textContent);
+    const b0 = vp.scrollTop;
+    key("ArrowDown");
+    await sleep(300);
+    ok("px step scrolls 120", Math.abs(vp.scrollTop - b0 - 120) < 12, "delta=" + Math.round(vp.scrollTop - b0));
+
+    document.querySelector("#rail .rail-btn[data-act='theme']").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(150);
+    ok("theme toggles to dark", document.body.dataset.theme === "dark", document.body.dataset.theme);
+
+    document.querySelector("#rail .rail-btn[data-act='toc']").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(150);
+    ok("toc drawer opens", !document.getElementById("toc-drawer").hidden);
+    document.getElementById("toc-list").scrollTop = 9 * tocRowH;   // 虚拟滚动：先滚到那一行再点
+    await sleep(150);
+    document.querySelector('#toc-list .toc-item[data-index="9"]').dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(500);
+    ok("toc click jumps to chapter 10", asked().indexOf(9) >= 0, "asked=" + JSON.stringify(asked()));
+    ok("toc drawer closed after jump", document.getElementById("toc-drawer").hidden);
+
+    document.querySelector("#rail .rail-btn[data-act='fullscreen']").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(100);
+    ok("fullscreen message sent", sent().filter(s => s.type === "fullscreen").length === 1);
+
+    document.querySelector("#rail .rail-btn[data-act='home']").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(300);
+    ok("back to shelf", !document.getElementById("home").hidden && document.getElementById("reader").hidden);
+    ok("shelf card rendered", document.querySelectorAll("#shelf .book-card").length === 1);
+
+    const url = document.getElementById("url-input");
+    url.value = "twkan.com/book/67581/index.html";
+    document.getElementById("open-btn").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(100);
+    const op = sent().filter(s => s.type === "open").slice(-1)[0];
+    ok("open message sent", op && op.url === "twkan.com/book/67581/index.html", op ? op.url : "");
+
+    // ---------- 工具抽屉：离线下载 / 导出 TXT / 本地 TXT ----------
+    sendHost({ type: "book", meta: { bookId: "67581", title: "測試書", author: "作者" }, kind: "web",
+      total: 100, resumeIndex: 4, resumeRatio: 0, chapters: window.__chapters });
+    await sleep(300);
+    document.querySelector("#rail .rail-btn[data-act='tools']").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(150);
+    ok("tools drawer opens", !document.getElementById("tools-panel").hidden);
+    ok("txt group hidden for web book", document.getElementById("txt-group").hidden === true);
+    ok("dl group visible for web book", document.getElementById("dl-group").hidden === false);
+    ok("tools sub shows title", document.getElementById("tools-sub").textContent.indexOf("測試書") >= 0,
+      document.getElementById("tools-sub").textContent);
+
+    const dlScope = document.getElementById("dl-scope");
+    dlScope.value = "range";
+    dlScope.dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(80);
+    ok("dl range row visible", document.getElementById("dl-range-row").hidden === false);
+    ok("dl from prefilled to current+1", document.getElementById("dl-from").value === "5",
+      document.getElementById("dl-from").value);
+    document.getElementById("dl-to").value = "20";
+    document.getElementById("dl-start").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(80);
+    const dlMsg = sent().filter(s => s.type === "download").slice(-1)[0];
+    ok("download message sent", dlMsg && dlMsg.scope === "range" && dlMsg.from === 5 && dlMsg.to === 20,
+      JSON.stringify(dlMsg));
+
+    sendHost({ type: "job", kind: "download", state: "running", done: 3, total: 16, queued: 13 });
+    await sleep(60);
+    ok("job progress shown", document.getElementById("dl-progress").value === 3 &&
+      document.getElementById("dl-progress").max === 16 &&
+      document.getElementById("dl-status").textContent.indexOf("3 / 16") >= 0,
+      document.getElementById("dl-status").textContent);
+    ok("dl start disabled while running", document.getElementById("dl-start").disabled === true);
+    ok("dl pause enabled while running", document.getElementById("dl-pause").disabled === false);
+    document.getElementById("dl-pause").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(60);
+    ok("downloadPause sent", sent().filter(s => s.type === "downloadPause").length === 1);
+    sendHost({ type: "job", kind: "download", state: "done", done: 16, total: 16, queued: 0 });
+    await sleep(60);
+    ok("dl start re-enabled after done", document.getElementById("dl-start").disabled === false);
+
+    // 暂停之后「开始下载」必须还能点，否则就卡死了
+    sendHost({ type: "job", kind: "download", state: "running", done: 2, total: 16, queued: 14 });
+    await sleep(60);
+    sendHost({ type: "job", kind: "download", state: "paused", done: 2, total: 16, queued: 14 });
+    await sleep(60);
+    ok("paused status shown", document.getElementById("dl-status").textContent.indexOf("已暂停") >= 0,
+      document.getElementById("dl-status").textContent);
+    ok("dl start enabled while paused", document.getElementById("dl-start").disabled === false);
+    ok("dl pause disabled while paused", document.getElementById("dl-pause").disabled === true);
+
+    // 已缓存章节提示
+    sendHost({ type: "cacheInfo", bookId: "67581", total: 100, count: 6, ranges: [[1, 3], [10, 12]] });
+    await sleep(60);
+    let cacheText = document.getElementById("dl-cache").textContent;
+    ok("cache ranges shown", cacheText.indexOf("1–3") >= 0 && cacheText.indexOf("10–12") >= 0 &&
+      cacheText.indexOf("共 6 章") >= 0, cacheText);
+    ok("selected range cache count", cacheText.indexOf("已缓存 3 / 16 章") >= 0, cacheText);
+
+    document.getElementById("dl-from").value = "1";
+    document.getElementById("dl-from").dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById("dl-to").value = "30";
+    document.getElementById("dl-to").dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(60);
+    cacheText = document.getElementById("dl-cache").textContent;
+    ok("cache hint follows range edit", cacheText.indexOf("已缓存 6 / 30 章") >= 0, cacheText);
+
+    // 每章间隔：用户自己定，预估跟着区间和间隔走，但不会低于「请求间隔」(此处为 3)
+    const dlEst = document.getElementById("dl-est").textContent;
+    ok("download pace estimate follows range", dlEst.indexOf("还要抓 24 章") >= 0, dlEst);
+
+    const gapEl = document.getElementById("dl-gap");
+    gapEl.value = "1";
+    gapEl.dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(60);
+    ok("gap floored by request interval",
+      document.getElementById("dl-est").textContent.indexOf("每章间隔 3.0 秒") >= 0,
+      document.getElementById("dl-est").textContent);
+
+    gapEl.value = "10";
+    gapEl.dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(60);
+    ok("gap edit updates estimate",
+      document.getElementById("dl-est").textContent.indexOf("每章间隔 10.0 秒") >= 0,
+      document.getElementById("dl-est").textContent);
+
+    gapEl.value = "999";
+    gapEl.dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(60);
+    const gapMsg = sent().filter(s => s.type === "setSetting").slice(-1)[0];
+    ok("gap clamped to 60 and saved", gapEl.value === "60" && !!gapMsg && gapMsg.value.downloadGap === 60,
+      gapEl.value + " / " + JSON.stringify(gapMsg && gapMsg.value && gapMsg.value.downloadGap));
+
+    gapEl.value = "2";
+    gapEl.dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(60);
+
+    sendHost({ type: "cacheInfo", bookId: "67581", total: 100, count: 0, ranges: [] });
+    await sleep(60);
+    ok("empty cache hint", document.getElementById("dl-cache").textContent.indexOf("无") >= 0,
+      document.getElementById("dl-cache").textContent);
+
+    // 换一本书之后，下载区间不该还留着上一本的章号
+    sendHost({ type: "book", meta: { bookId: "67581", title: "測試書", author: "作者" }, kind: "web",
+      total: 100, resumeIndex: 9, resumeRatio: 0, chapters: window.__chapters });
+    await sleep(300);
+    ok("range inputs reset on book switch",
+      document.getElementById("dl-from").value === "10" && document.getElementById("dl-to").value === "59",
+      document.getElementById("dl-from").value + "-" + document.getElementById("dl-to").value);
+
+    // 清理缓存：两步确认 + 消息内容
+    sendHost({ type: "cacheInfo", bookId: "67581", total: 100, count: 6, bytes: 6000,
+      ranges: [[1, 3, 3000], [10, 12, 3000]] });
+    await sleep(60);
+    const clrBtn = document.getElementById("clr-run");
+    ok("clear plan counts all cached", document.getElementById("clr-status").textContent.indexOf("将删除 6 章") >= 0,
+      document.getElementById("clr-status").textContent);
+    clrBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(60);
+    ok("clear asks for confirmation first", clrBtn.textContent.indexOf("确认清理 6 章") >= 0, clrBtn.textContent);
+    ok("no clearCache on first click", sent().filter(s => s.type === "clearCache").length === 0);
+    clrBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(60);
+    const clrMsg = sent().filter(s => s.type === "clearCache").slice(-1)[0];
+    ok("clearCache sent after confirm", clrMsg && clrMsg.scope === "all", JSON.stringify(clrMsg));
+    ok("clear button label restored", clrBtn.textContent === "清理", clrBtn.textContent);
+
+    document.getElementById("clr-scope").value = "range";
+    document.getElementById("clr-scope").dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(60);
+    ok("clear range row visible", document.getElementById("clr-range-row").hidden === false);
+    document.getElementById("clr-from").value = "10";
+    document.getElementById("clr-from").dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById("clr-to").value = "12";
+    document.getElementById("clr-to").dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(60);
+    ok("clear range count", document.getElementById("clr-status").textContent.indexOf("将删除 3 章") >= 0,
+      document.getElementById("clr-status").textContent);
+    clrBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(60);
+    clrBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(60);
+    const clrMsg2 = sent().filter(s => s.type === "clearCache").slice(-1)[0];
+    ok("clearCache range message", clrMsg2 && clrMsg2.scope === "range" && clrMsg2.from === 10 && clrMsg2.to === 12,
+      JSON.stringify(clrMsg2));
+
+    const exScope = document.getElementById("ex-scope");
+    exScope.value = "range";
+    exScope.dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(60);
+    ok("ex range row visible", document.getElementById("ex-range-row").hidden === false);
+    document.getElementById("ex-from").value = "1";
+    document.getElementById("ex-to").value = "30";
+    document.getElementById("ex-enc").value = "gbk";
+    document.getElementById("ex-fill").checked = true;
+    document.getElementById("ex-start").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(80);
+    const exMsg = sent().filter(s => s.type === "exportTxt").slice(-1)[0];
+    ok("export message sent", exMsg && exMsg.scope === "range" && exMsg.from === 1 && exMsg.to === 30 &&
+      exMsg.encoding === "gbk" && exMsg.fill === true && exMsg.includeTitles === true &&
+      exMsg.simplified === true && exMsg.bookId === "67581", JSON.stringify(exMsg));
+
+    sendHost({ type: "exportDone", path: "D:\\out\\測試書.txt", chapters: 30, skipped: 2, bytes: 12345, encoding: "gbk" });
+    await sleep(60);
+    ok("export done status", document.getElementById("ex-status").textContent.indexOf("30") >= 0 &&
+      document.getElementById("ex-status").textContent.indexOf("跳过 2") >= 0,
+      document.getElementById("ex-status").textContent);
+
+    sendHost({ type: "book", meta: { bookId: "local-abc", title: "本地書", author: "本地文件" }, kind: "local",
+      localPath: "D:\\books\\a.txt", total: 8, resumeIndex: 0, resumeRatio: 0, chapters: window.__chapters.slice(0, 8) });
+    await sleep(300);
+    sendHost({ type: "txtInfo", bookId: "local-abc", path: "D:\\books\\a.txt", encoding: "GBK",
+      requested: "auto", regex: "", chapters: 8, samples: ["第一章 開始", "第二章 轉折"] });
+    await sleep(150);
+    ok("txt group visible for local book", document.getElementById("txt-group").hidden === false);
+    ok("dl group hidden for local book", document.getElementById("dl-group").hidden === true);
+    ok("txt info filled", document.getElementById("txt-count").textContent === "8 章" &&
+      document.getElementById("txt-path").textContent.indexOf("a.txt") >= 0 &&
+      document.getElementById("txt-samples").children.length === 3,
+      document.getElementById("txt-count").textContent + " samples=" + document.getElementById("txt-samples").children.length);
+
+    document.getElementById("txt-regex").value = "^第.+章";
+    document.getElementById("txt-enc").value = "UTF-8";
+    document.getElementById("txt-rescan").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(80);
+    const rsMsg = sent().filter(s => s.type === "rescanTxt").slice(-1)[0];
+    ok("rescan message sent", rsMsg && rsMsg.encoding === "UTF-8" && rsMsg.regex === "^第.+章", JSON.stringify(rsMsg));
+    document.getElementById("txt-relocate").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(80);
+    const rlMsg = sent().filter(s => s.type === "relocateBook").slice(-1)[0];
+    ok("relocate message sent", rlMsg && rlMsg.bookId === "local-abc", JSON.stringify(rlMsg));
+
+    document.getElementById("import-txt").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(60);
+    ok("importTxt message sent", sent().filter(s => s.type === "importTxt").length === 1);
+
+    document.querySelector("#rail .rail-btn[data-act='home']").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(200);
+    sendHost({ type: "needRelocate", bookId: "local-abc", path: "D:\\books\\a.txt" });
+    await sleep(120);
+    ok("relocate prompt shown", document.getElementById("home-status").textContent.indexOf("找不到了") >= 0 &&
+      !!document.querySelector("#home-status button"),
+      document.getElementById("home-status").textContent);
+    sendHost({ type: "toast", text: "已导入《測試》，识别到 8 章" });
+    await sleep(60);
+    ok("toast message shown", document.getElementById("toast").hidden === false);
+    sendHost({ type: "dragging", on: true });
+    await sleep(60);
+    ok("drag overlay shown", document.getElementById("drop-overlay").hidden === false);
+    sendHost({ type: "dragging", on: false });
+    await sleep(60);
+    ok("drag overlay hidden", document.getElementById("drop-overlay").hidden === true);
+
+    ok("no js errors", window.__errors.length === 0, window.__errors.join(" | "));
+   } catch (e) {
+    R.push("FAIL exception :: " + (e && (e.stack || e.message) || String(e)));
+   } finally {
+    const pre = document.createElement("pre");
+    pre.id = "smoke-out";
+    pre.textContent = R.join("\n") + "\nTOTAL " + R.length + " FAIL " + R.filter(x => x.indexOf("FAIL") === 0).length;
+    document.body.appendChild(pre);
+   }
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# WebView2 SDK（拉取方法见 build.bat 开头的提示）
+.deps/
+
+# 构建产物与分发目录
+build/
+dist/
+
+# 日志
+*.log
+
+# 抓取样本（真实书页，版权原因不入库；缺失时相关测试自动跳过）
+testdata/

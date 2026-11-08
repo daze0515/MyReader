@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>阅读器</title>
+<link rel="stylesheet" href="reader.css">
+</head>
+<body data-theme="sepia">
+
+<!-- ============ 首页 ============ -->
+<section id="home" class="screen">
+  <div class="home-wrap">
+    <header class="home-head">
+      <h1>阅读器</h1>
+      <p class="sub">粘贴小说目录页网址，转成干净的阅读页面</p>
+    </header>
+
+    <div class="url-row">
+      <input id="url-input" type="text" spellcheck="false"
+             placeholder="https://twkan.com/book/67581/index.html">
+      <button id="open-btn" class="primary">开始阅读</button>
+      <button id="import-txt" class="ghost tall" title="导入本地 TXT 小说">导入 TXT</button>
+    </div>
+    <div id="home-status" class="status-line"></div>
+    <p class="hint" style="margin-top:10px">支持把 .txt 文件直接拖进窗口导入；导入是原地引用，不会复制文件。</p>
+
+    <div class="shelf-head">
+      <h2>书架</h2>
+      <button id="refresh-shelf" class="ghost small">刷新</button>
+    </div>
+    <div id="shelf" class="shelf"></div>
+
+    <details class="adv">
+      <summary>网络与代理</summary>
+      <div class="adv-body">
+        <label class="field">
+          <span>代理方式</span>
+          <select id="proxy-mode">
+            <option value="system">跟随系统代理</option>
+            <option value="manual">手动指定</option>
+            <option value="none">不使用代理</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>代理地址</span>
+          <input id="proxy-manual" type="text" spellcheck="false" placeholder="http://127.0.0.1:7890">
+        </label>
+        <p class="hint">修改代理后需要重启程序生效。抓取与页面渲染使用同一代理，否则站点验证会失效。</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ============ 阅读页 ============ -->
+<section id="reader" class="screen" hidden>
+  <header id="topbar">
+    <div class="tb-left">
+      <div id="tb-title" class="tb-title">—</div>
+      <div id="tb-meta" class="tb-meta"></div>
+    </div>
+    <div class="tb-right">
+      <span id="tb-progress" class="tb-progress">0%</span>
+    </div>
+  </header>
+
+  <main id="viewport">
+    <div id="content" class="content"></div>
+    <div id="loading" class="loading" hidden>正在加载…</div>
+    <div id="error-bar" class="error-bar" hidden></div>
+  </main>
+
+  <nav id="rail">
+    <button class="rail-btn" data-act="toc" title="目录"><span class="ri">☰</span><span class="rl">目录</span></button>
+    <button class="rail-btn" data-act="theme" title="夜间"><span class="ri">◐</span><span class="rl">夜间</span></button>
+    <button class="rail-btn" data-act="settings" title="设置"><span class="ri">⚙</span><span class="rl">设置</span></button>
+    <button class="rail-btn" data-act="tools" title="工具"><span class="ri">⤓</span><span class="rl">工具</span></button>
+    <button class="rail-btn" data-act="fullscreen" title="全屏"><span class="ri">⛶</span><span class="rl">全屏</span></button>
+    <button class="rail-btn" data-act="home" title="书架"><span class="ri">⌂</span><span class="rl">书架</span></button>
+  </nav>
+
+  <aside id="toc-drawer" class="drawer" hidden>
+    <div class="drawer-head">
+      <div>
+        <div id="toc-book" class="drawer-title">目录</div>
+        <div id="toc-sub" class="drawer-sub"></div>
+      </div>
+      <button class="icon-btn" data-close="toc-drawer">✕</button>
+    </div>
+    <div class="drawer-search">
+      <input id="toc-search" type="text" placeholder="搜索章节…" spellcheck="false">
+    </div>
+    <div id="toc-list" class="toc-list"></div>
+  </aside>
+
+  <aside id="settings-panel" class="drawer right" hidden>
+    <div class="drawer-head">
+      <div class="drawer-title">阅读设置</div>
+      <button class="icon-btn" data-close="settings-panel">✕</button>
+    </div>
+    <div class="drawer-body">
+
+      <div class="group">
+        <div class="group-title">背景</div>
+        <div class="themes" id="theme-list">
+          <button class="swatch" data-theme-value="light"  style="--sw:#ffffff;--sf:#22262b"><span>白</span></button>
+          <button class="swatch" data-theme-value="sepia"  style="--sw:#f5efe1;--sf:#3b3325"><span>米黄</span></button>
+          <button class="swatch" data-theme-value="green"  style="--sw:#cce8cf;--sf:#23331f"><span>护眼</span></button>
+          <button class="swatch" data-theme-value="dark"   style="--sw:#16181c;--sf:#c9ccd1"><span>夜间</span></button>
+          <button class="swatch" data-theme-value="custom" style="--sw:#f5efe1;--sf:#3b3325"><span>自定义</span></button>
+        </div>
+        <label class="field" id="custom-bg-row" hidden>
+          <span>自定义背景</span>
+          <input id="custom-bg" type="color" value="#f5efe1">
+        </label>
+      </div>
+
+      <div class="group">
+        <div class="group-title">字体</div>
+        <label class="field">
+          <span>字体</span>
+          <select id="font-family"></select>
+        </label>
+        <label class="field range">
+          <span>字号</span>
+          <input id="font-size" type="range" min="14" max="34" step="1">
+          <output id="font-size-out"></output>
+        </label>
+        <label class="field range">
+          <span>字重</span>
+          <input id="font-weight" type="range" min="300" max="700" step="100">
+          <output id="font-weight-out"></output>
+        </label>
+        <label class="field range">
+          <span>字间距</span>
+          <input id="letter-spacing" type="range" min="0" max="0.2" step="0.01">
+          <output id="letter-spacing-out"></output>
+        </label>
+      </div>
+
+      <div class="group">
+        <div class="group-title">段落</div>
+        <label class="field range">
+          <span>行距</span>
+          <input id="line-height" type="range" min="1.2" max="2.8" step="0.05">
+          <output id="line-height-out"></output>
+        </label>
+        <label class="field range">
+          <span>段间距</span>
+          <input id="para-spacing" type="range" min="0" max="2" step="0.05">
+          <output id="para-spacing-out"></output>
+        </label>
+        <label class="field range">
+          <span>页面宽度</span>
+          <input id="page-width" type="range" min="24" max="72" step="1">
+          <output id="page-width-out"></output>
+        </label>
+        <label class="field switch">
+          <span>首行缩进</span>
+          <input id="indent" type="checkbox">
+        </label>
+      </div>
+
+      <div class="group">
+        <div class="group-title">文字转换</div>
+        <label class="field switch">
+          <span>转为简体</span>
+          <input id="simplified" type="checkbox">
+        </label>
+      </div>
+
+      <div class="group">
+        <div class="group-title">滚动</div>
+        <label class="field">
+          <span>方向键步长</span>
+          <select id="scroll-step-unit">
+            <option value="line">按行</option>
+            <option value="px">按像素</option>
+          </select>
+        </label>
+        <label class="field range">
+          <span>步长</span>
+          <input id="scroll-step" type="range" min="1" max="20" step="1">
+          <output id="scroll-step-out"></output>
+        </label>
+        <p class="hint">↓ / ↑ 按步长滚动，空格翻一屏，← / → 切换章节。</p>
+      </div>
+
+      <div class="group">
+        <div class="group-title">抓取</div>
+        <label class="field range">
+          <span>请求间隔</span>
+          <input id="request-interval" type="range" min="0.8" max="5" step="0.1">
+          <output id="request-interval-out"></output>
+        </label>
+        <p class="hint">两次联网抓取之间的最小间隔，调大可以降低被站点限流 / 反爬的概率。读过的章节直接走本地缓存，不再联网。离线下载的节奏单独在「工具 → 离线下载 → 每章间隔」里设。</p>
+      </div>
+
+    </div>
+  </aside>
+
+  <aside id="tools-panel" class="drawer right" hidden>
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-title">工具</div>
+        <div id="tools-sub" class="drawer-sub"></div>
+      </div>
+      <button class="icon-btn" data-close="tools-panel">✕</button>
+    </div>
+    <div class="drawer-body">
+
+      <div class="group" id="txt-group" hidden>
+        <div class="group-title">本地 TXT</div>
+        <div class="kv"><span>文件</span><b id="txt-path">—</b></div>
+        <div class="kv"><span>编码</span><b id="txt-enc-info">—</b></div>
+        <div class="kv"><span>章节</span><b id="txt-count">—</b></div>
+        <div id="txt-samples" class="samples"></div>
+        <button id="txt-relocate" class="ghost wide">重新定位文件…</button>
+        <div class="group-sub">章节识别</div>
+        <label class="field">
+          <span>编码</span>
+          <select id="txt-enc">
+            <option value="auto">自动识别</option>
+            <option value="UTF-8">UTF-8</option>
+            <option value="GBK">GBK / GB18030</option>
+            <option value="UTF-16LE">UTF-16LE</option>
+            <option value="UTF-16BE">UTF-16BE</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>章节正则</span>
+          <input id="txt-regex" type="text" spellcheck="false" placeholder="留空用内置规则，例：^第.+章">
+        </label>
+        <button id="txt-rescan" class="ghost wide">重新识别章节</button>
+        <p class="hint">正则按整行匹配；填了就只用你的规则，留空才用内置规则。有捕获组时取第 1 组作标题，没有则整行作标题。改动会立刻重新切分并保存。</p>
+      </div>
+
+      <div class="group" id="dl-group">
+        <div class="group-title">离线下载</div>
+        <label class="field">
+          <span>范围</span>
+          <select id="dl-scope">
+            <option value="all">整本</option>
+            <option value="next">接下来 N 章</option>
+            <option value="range">自定义区间</option>
+          </select>
+        </label>
+        <div class="row" id="dl-next-row" hidden>
+          <input id="dl-next" type="number" min="1" step="10" value="50">
+          <span class="row-label">章</span>
+        </div>
+        <div class="row" id="dl-range-row" hidden>
+          <input id="dl-from" type="number" min="1" value="1">
+          <span class="row-label">到</span>
+          <input id="dl-to" type="number" min="1" value="50">
+        </div>
+        <div id="dl-cache" class="job-status">本地缓存：—</div>
+        <div class="row">
+          <span class="row-label">每章间隔</span>
+          <input id="dl-gap" type="number" min="0.5" max="60" step="0.5" value="2">
+          <span class="row-label">秒</span>
+        </div>
+        <div id="dl-est" class="job-status">—</div>
+        <div class="row btns">
+          <button id="dl-start" class="ghost wide">开始下载</button>
+          <button id="dl-pause" class="ghost" disabled>暂停</button>
+        </div>
+        <progress id="dl-progress" value="0" max="1"></progress>
+        <div id="dl-status" class="job-status">未开始</div>
+        <p class="hint">逐章抓取并写入本地缓存，可随时暂停再继续（重新开始会跳过已缓存的章节）。下载过的章节断网也能读。</p>
+
+        <div class="group-sep"></div>
+        <div class="group-title">清理缓存</div>
+        <label class="field">
+          <span>范围</span>
+          <select id="clr-scope">
+            <option value="all">全部已缓存</option>
+            <option value="range">自定义区间</option>
+          </select>
+        </label>
+        <div class="row" id="clr-range-row" hidden>
+          <input id="clr-from" type="number" min="1" value="1">
+          <span class="row-label">到</span>
+          <input id="clr-to" type="number" min="1" value="50">
+        </div>
+        <div class="row btns">
+          <button id="clr-run" class="ghost wide danger">清理</button>
+        </div>
+        <div id="clr-status" class="job-status">只删正文缓存，保留目录</div>
+      </div>
+
+      <div class="group" id="ex-group">
+        <div class="group-title">导出 TXT</div>
+        <label class="field">
+          <span>范围</span>
+          <select id="ex-scope">
+            <option value="all">整本</option>
+            <option value="cached">仅已缓存</option>
+            <option value="range">自定义区间</option>
+          </select>
+        </label>
+        <div class="row" id="ex-range-row" hidden>
+          <input id="ex-from" type="number" min="1" value="1">
+          <span class="row-label">到</span>
+          <input id="ex-to" type="number" min="1" value="50">
+        </div>
+        <label class="field">
+          <span>编码</span>
+          <select id="ex-enc">
+            <option value="utf8bom">UTF-8 带 BOM（推荐）</option>
+            <option value="utf8">UTF-8</option>
+            <option value="gbk">GBK</option>
+          </select>
+        </label>
+        <label class="field switch">
+          <span>包含章节标题</span>
+          <input id="ex-titles" type="checkbox" checked>
+        </label>
+        <label class="field switch">
+          <span>转为简体</span>
+          <input id="ex-simplified" type="checkbox" checked>
+        </label>
+        <label class="field switch">
+          <span>先补齐未缓存章节</span>
+          <input id="ex-fill" type="checkbox">
+        </label>
+        <div class="row btns">
+          <button id="ex-start" class="ghost wide">导出…</button>
+          <button id="ex-cancel" class="ghost" disabled>取消</button>
+        </div>
+        <progress id="ex-progress" value="0" max="1"></progress>
+        <div id="ex-status" class="job-status">未开始</div>
+        <p class="hint">导出时会弹出保存对话框。勾选「先补齐未缓存章节」会先联网把缺的章节抓完再写文件。</p>
+      </div>
+
+    </div>
+  </aside>
+  <div id="dim" class="dim" hidden></div>
+</section>
+
+<div id="drop-overlay" class="drop-overlay" hidden>
+  <div class="drop-hint">松开鼠标，导入 TXT 小说</div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="s2t.js"></script>
+<script src="reader.js"></script>
+</body>
+</html>

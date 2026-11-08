@@ -1,0 +1,13 @@
+import fs from "node:fs";
+const js = fs.readFileSync("web/reader.js", "utf8");
+const html = fs.readFileSync("web/index.html", "utf8");
+const ids = new Set();
+for (const m of js.matchAll(/\$\("([^"]+)"\)/g)) ids.add(m[1]);
+const have = new Set();
+for (const m of html.matchAll(/id="([^"]+)"/g)) have.add(m[1]);
+const missing = [...ids].filter((x) => !have.has(x));
+const unused = [...have].filter((x) => !ids.has(x));
+console.log("reader.js refs:", ids.size);
+console.log("index.html ids:", have.size);
+console.log("MISSING in html:", missing.length ? missing.join(", ") : "(none)");
+console.log("ids not referenced by reader.js:", unused.length ? unused.join(", ") : "(none)");
