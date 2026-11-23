@@ -433,7 +433,7 @@ reader/
   - **≤24px 单独出一版**：去掉正文线、丝带加宽一点，否则缩下去只是一团糊
   - 同时输出 `build/icon_preview.png`（512 预览）和 `build/icon_small.png`（16–64 实际像素放大图），方便肉眼验收
 - **产物**：`res/reader.ico`，10 个尺寸（256/128/96/64/48/40/32/24/20/16），全部带 alpha
-- **资源脚本**：`src/app.rc` —— 图标（`IDI_READER` = 101，要和 `App.cpp` 里的宏保持一致）+ VERSIONINFO（`FileDescription` / `ProductName` = 小说阅读器，1.0.0.0）
+- **资源脚本**：`src/app.rc` 定义图标（`IDI_READER` = 101，要和 `App.cpp` 的宏保持一致）、产品名称和 Windows 文件版本。
 - **构建**：`build.bat` 里先 `rc /nologo /c 65001 /Fo build\app.res src\app.rc`，再把 `build\app.res` 一起丢给链接器。`/c 65001` 是为了让 rc.exe 按 UTF-8 读脚本里的中文版本信息
 - **窗口图标**：`App.cpp` 的 `Init()` 里用 `LoadImageW(hInst, MAKEINTRESOURCEW(IDI_READER), ...)` 分别取大/小图标填 `wc.hIcon` / `wc.hIconSm`，注册类之后再 `WM_SETICON` 显式设一次，防止被 WebView2 覆盖。取不到就退回 `IDI_APPLICATION`，不会因为图标缺失起不来
 
