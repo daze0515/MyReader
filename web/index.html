@@ -20,10 +20,10 @@
       <input id="url-input" type="text" spellcheck="false"
              placeholder="https://twkan.com/book/67581/index.html">
       <button id="open-btn" class="primary">开始阅读</button>
-      <button id="import-txt" class="ghost tall" title="导入本地 TXT 小说">导入 TXT</button>
+      <button id="import-txt" class="ghost tall">导入本地书</button>
     </div>
     <div id="home-status" class="status-line"></div>
-    <p class="hint" style="margin-top:10px">支持把 .txt 文件直接拖进窗口导入；导入是原地引用，不会复制文件。</p>
+    <p class="hint" style="margin-top:10px">可拖入 TXT、EPUB、MOBI、AZW3 或 AZW。导入时原地引用文件。</p>
 
     <div class="shelf-head">
       <h2>书架</h2>
@@ -210,12 +210,13 @@
     <div class="drawer-body">
 
       <div class="group" id="txt-group" hidden>
-        <div class="group-title">本地 TXT</div>
+        <div class="group-title" id="txt-group-title">本地 TXT</div>
         <div class="kv"><span>文件</span><b id="txt-path">—</b></div>
-        <div class="kv"><span>编码</span><b id="txt-enc-info">—</b></div>
+        <div class="kv"><span id="txt-enc-label">编码</span><b id="txt-enc-info">—</b></div>
         <div class="kv"><span>章节</span><b id="txt-count">—</b></div>
         <div id="txt-samples" class="samples"></div>
         <button id="txt-relocate" class="ghost wide">重新定位文件…</button>
+        <div id="txt-split">
         <div class="group-sub">章节识别</div>
         <label class="field">
           <span>编码</span>
@@ -233,6 +234,7 @@
         </label>
         <button id="txt-rescan" class="ghost wide">重新识别章节</button>
         <p class="hint">正则按整行匹配；填了就只用你的规则，留空才用内置规则。有捕获组时取第 1 组作标题，没有则整行作标题。改动会立刻重新切分并保存。</p>
+        </div>
       </div>
 
       <div class="group" id="dl-group">
@@ -339,7 +341,7 @@
 </section>
 
 <div id="drop-overlay" class="drop-overlay" hidden>
-  <div class="drop-hint">松开鼠标，导入 TXT 小说</div>
+  <div class="drop-hint">松开鼠标，导入本地书</div>
 </div>
 
 <div id="toast" class="toast" hidden></div>

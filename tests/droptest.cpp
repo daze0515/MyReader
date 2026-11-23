@@ -13,8 +13,8 @@
 
 static int g_pass = 0, g_fail = 0;
 static void Check(bool ok, const char* name) {
-  if (ok) { g_pass++; printf("  ok   %s/n", name); }
-  else { g_fail++; printf("  FAIL %s/n", name); }
+  if (ok) { g_pass++; printf("  ok   %s\n", name); }
+  else { g_fail++; printf("  FAIL %s\n", name); }
 }
 
 // 最小 IDataObject：只暴露 CF_HDROP
@@ -89,7 +89,7 @@ struct Recorder {
 
 int main() {
   OleInitialize(nullptr);
-  printf("=== DROPTARGET SELFTEST ===/n");
+  printf("=== DROPTARGET SELFTEST ===\n");
   const POINTL pt = { 100, 100 };
 
   {  // 1. 单个 .txt：进入高亮、放下导入
@@ -189,7 +189,37 @@ int main() {
     d->Release();
   }
 
-  {  // 9. QueryInterface
+  {  // 9. .epub 也接收（大小写不敏感），和 .txt 混在一起时谁在前取谁
+    Recorder r; r.Attach();
+    DropData* d = new DropData({ L"D:/books/novel.EPUB" });
+    DWORD eff = 0;
+    r.target->DragEnter(d, 0, pt, &eff);
+    Check(eff == DROPEFFECT_COPY, "enter: .EPUB accepted");
+    DWORD e3 = 0;
+    r.target->Drop(d, 0, pt, &e3);
+    Check(r.dropCount == 1 && r.dropped == L"D:/books/novel.EPUB", "drop: .EPUB delivered");
+    d->Release();
+    Recorder r2; r2.Attach();
+    DropData* d2 = new DropData({ L"D:/a.pdf", L"D:/b.epub", L"D:/c.txt" });
+    DWORD e4 = 0;
+    r2.target->Drop(d2, 0, pt, &e4);
+    Check(r2.dropCount == 1 && r2.dropped == L"D:/b.epub", "drop: first book file wins (epub before txt)");
+    d2->Release();
+  }
+
+  for (const wchar_t* path : {L"D:/books/novel.mobi", L"D:/books/novel.AZW3", L"D:/books/novel.AZW"}) {
+    Recorder recorder;
+    recorder.Attach();
+    DropData* data = new DropData({L"D:/a.pdf", path, L"D:/b.txt"});
+    DWORD effect = 0;
+    recorder.target->DragEnter(data, 0, pt, &effect);
+    Check(effect == DROPEFFECT_COPY, "enter: Kindle extension accepted");
+    recorder.target->Drop(data, 0, pt, &effect);
+    Check(recorder.dropCount == 1 && recorder.dropped == path, "drop: Kindle book delivered");
+    data->Release();
+  }
+
+  {  // 10. QueryInterface
     Recorder r; r.Attach();
     void* pv = nullptr;
     Check(r.target->QueryInterface(IID_IDropTarget, &pv) == S_OK && pv != nullptr, "QI: IDropTarget");
@@ -201,6 +231,6 @@ int main() {
     Check(r.target->QueryInterface(IID_IDataObject, &pv) == E_NOINTERFACE, "QI: IDataObject -> E_NOINTERFACE");
   }
 
-  printf("PASS=%d FAIL=%d/n", g_pass, g_fail);
+  printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
   return g_fail == 0 ? 0 : 1;
 }

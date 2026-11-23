@@ -2,7 +2,7 @@
 
 [中文 README](README.md)
 
-A Windows desktop novel reader: a C++ / Win32 + WebView2 host with a local HTML/JS reading UI. Reads online novel sites and local TXT files, with built-in watermark cleaning, Traditional-to-Simplified Chinese conversion, offline download, and TXT export.
+A Windows desktop novel reader with a C++ / Win32 and WebView2 host and a local HTML/JS reading UI. Reads online novels and local TXT, EPUB, and Kindle ebooks, with watermark cleaning, Traditional-to-Simplified Chinese conversion, offline download, and TXT export.
 
 ## Features
 
@@ -11,6 +11,8 @@ A Windows desktop novel reader: a C++ / Win32 + WebView2 host with a local HTML/
 - **Watermark cleaning**: character whitelist + ad-line detection removes obfuscated characters and promo lines injected into chapter text
 - **Traditional → Simplified**: built-in OpenCC mapping, Simplified by default, "keep original" available
 - **Local TXT**: drag & drop or import from the bookshelf; automatic chapter splitting (custom regex supported), encoding detection (UTF-8 / GBK / UTF-16), and relocation if the file moves
+- **Local EPUB** supports EPUB2 and EPUB3 chapters, metadata, covers, and illustrations. Drag books into the window or import them from the bookshelf.
+- **Local MOBI / AZW3 / AZW** uses the same import options and reads chapters, metadata, covers, and illustrations from MOBI6, KF8, and hybrid files. It accepts uncompressed and PalmDOC-compressed files. DRM, HUFF/CDIC, KFX, and Kindle Print Replica are unsupported.
 - **Offline download**: whole book / next N chapters / custom range, resumable, adjustable pacing, auto-pause on verification
 - **TXT export**: range / encoding / titles / Simplified conversion options
 - **Reading experience**: themes, font, size, line/paragraph/letter spacing, page width; keyboard-driven scrolling; seamless next-chapter append; progress memory; virtualized TOC (thousands of chapters stay smooth); local cover cache
@@ -52,7 +54,9 @@ Output lands at `dist\Reader.exe`.
 test.bat
 ```
 
-Includes C++ unit tests (extraction / adapters / TXT / drag-drop) and frontend smoke scripts (`tests/*.mjs`, run with `READER_DEBUG_PORT=9336`). Scraped sample pages (`testdata/`) are not in the repo for copyright reasons; tests that depend on them skip automatically.
+`test.bat` runs the C++ tests for extraction, site adapters, TXT, EPUB, MOBI / AZW3, and drag and drop. To run the frontend debugging scripts under `tests/`, launch the app with `READER_DEBUG_PORT=9336`. Tests that require scraped sample pages skip when `testdata/` is absent.
+
+Drag a bundled test book into the window to check its table of contents, text, cover, and illustrations. [EPUB2](tests/sample_epub2.epub) · [EPUB3](tests/sample_epub3.epub) · [MOBI6](tests/sample_mobi6.mobi) · [AZW3](tests/sample_azw3.azw3) · [Hybrid MOBI / KF8](tests/sample_hybrid.mobi)
 
 ## Layout
 
@@ -74,3 +78,5 @@ This project only re-formats content the user can already access. It does not cr
 ## License
 
 [MIT](LICENSE)
+
+EPUB decompression uses miniz 3.1.2, bundled under the [MIT license](third_party/miniz/LICENSE).

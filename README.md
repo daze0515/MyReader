@@ -2,7 +2,7 @@
 
 [English README](README.en.md)
 
-一个 Windows 桌面端小说阅读器：C++ / Win32 + WebView2 宿主，本地 HTML/JS 阅读界面。支持在线站点阅读与本地 TXT，内置水印清洗、简繁转换、离线下载与 TXT 导出。
+一个 Windows 桌面端小说阅读器：C++ / Win32 + WebView2 宿主，本地 HTML/JS 阅读界面。支持在线站点阅读与本地 TXT、EPUB 和 Kindle 电子书，内置水印清洗、简繁转换、离线下载与 TXT 导出。
 
 ## 功能
 
@@ -11,6 +11,8 @@
 - **水印清洗**：字符白名单 + 广告行识别，清掉正文中随机注入的伪装字符与推广行
 - **简繁转换**：内置 OpenCC 映射，默认简体，可切「保持原文」
 - **本地 TXT**：拖入窗口或书架导入；章节自动切分（可自定义正则）、编码自动识别（UTF-8 / GBK / UTF-16）、文件移动后可重新定位
+- **本地 EPUB**：同样拖入或导入；支持 EPUB2 / EPUB3，目录取自书内（nav / ncx），自动带出书名、作者、封面；一个文件里含多章时按目录锚点拆分。正文插图（含 SVG 插图页、章首题图）照常显示，生僻字小图用替代文字嵌回正文；带 DRM 加密的书无法打开
+- **本地 MOBI / AZW3 / AZW**：可拖入或从书架导入，支持 MOBI6、KF8 和双格式文件的目录、封面、作者与正文插图。支持无压缩和 PalmDOC 压缩。暂不支持 DRM、HUFF/CDIC、KFX 和 Kindle Print Replica。
 - **离线下载**：整本 / 接下来 N 章 / 自定义区间，断点续传，节奏可调，遇验证自动暂停
 - **导出 TXT**：范围 / 编码 / 含标题 / 转简体可选
 - **阅读体验**：主题、字体、字号、行距、段距、字距、页宽可调；键盘驱动滚动；章末自动续章；阅读进度记忆；目录虚拟滚动（上千章不卡）；封面本地缓存
@@ -52,7 +54,9 @@ build.bat
 test.bat
 ```
 
-包含 C++ 单元测试（提取 / 适配器 / TXT / 拖放）与前端冒烟脚本（`tests/*.mjs`，需 `READER_DEBUG_PORT=9336` 启动后跑）。抓取样本（`testdata/`）因版权原因未包含在仓库里，缺失时依赖样本的测试会自动跳过。
+`test.bat` 运行提取、站点适配、TXT、EPUB、MOBI / AZW3 和拖放的 C++ 测试。可另行用 `READER_DEBUG_PORT=9336` 启动程序，再运行 `tests/` 下的前端调试脚本。依赖抓取样本的测试会在缺少 `testdata/` 时跳过。
+
+可把仓库自带的测试样书拖进窗口，检查目录、正文、封面和插图。[EPUB2](tests/sample_epub2.epub) · [EPUB3](tests/sample_epub3.epub) · [MOBI6](tests/sample_mobi6.mobi) · [AZW3](tests/sample_azw3.azw3) · [MOBI / KF8 双格式](tests/sample_hybrid.mobi)
 
 ## 目录结构
 
@@ -74,3 +78,5 @@ PLAN.md   完整设计与实现笔记
 ## License
 
 [MIT](LICENSE)
+
+第三方代码：[miniz](https://github.com/richgel999/miniz) 3.1.2（MIT，位于 `third_party/miniz/`，用于解压 EPUB）

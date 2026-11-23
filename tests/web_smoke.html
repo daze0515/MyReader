@@ -48,15 +48,16 @@
     <div id="tools-sub"></div>
     <button data-close="tools-panel"></button>
     <div id="txt-group" hidden>
-      <b id="txt-path"></b><b id="txt-enc-info"></b><b id="txt-count"></b>
+      <div id="txt-group-title"></div>
+      <b id="txt-path"></b><span id="txt-enc-label"></span><b id="txt-enc-info"></b><b id="txt-count"></b>
       <div id="txt-samples"></div>
       <button id="txt-relocate"></button>
-      <select id="txt-enc">
+      <div id="txt-split"><select id="txt-enc">
         <option value="auto">auto</option><option value="UTF-8">utf8</option><option value="GBK">gbk</option>
         <option value="UTF-16LE">le</option><option value="UTF-16BE">be</option>
       </select>
       <input id="txt-regex" type="text">
-      <button id="txt-rescan"></button>
+      <button id="txt-rescan"></button></div>
     </div>
     <div id="dl-group">
       <select id="dl-scope">
@@ -496,6 +497,21 @@
     sendHost({ type: "dragging", on: false });
     await sleep(60);
     ok("drag overlay hidden", document.getElementById("drop-overlay").hidden === true);
+
+    sendHost({ type: "books", items: [{ bookId: "local-kindle", kind: "local", title: "测试 Kindle",
+      localPath: "D:\\books\\kindle.AZW3", total: 2 }] });
+    await sleep(80);
+    ok("AZW3 shelf badge", document.querySelector(".book-badge")?.textContent === "AZW3");
+    sendHost({ type: "book", meta: { bookId: "local-kindle", title: "测试 Kindle", format: "mobi" },
+      kind: "local", total: 2, resumeIndex: 0, chapters: ["章一", "章二"] });
+    sendHost({ type: "txtInfo", bookId: "local-kindle", format: "mobi", path: "D:\\books\\kindle.AZW3",
+      author: "测试作者", chapters: 2, samples: ["章一", "章二"] });
+    await sleep(150);
+    ok("MOBI tools show author and format", document.getElementById("txt-group-title").textContent === "本地 MOBI" &&
+      document.getElementById("txt-enc-label").textContent === "作者" &&
+      document.getElementById("txt-enc-info").textContent === "测试作者");
+    ok("MOBI hides TXT-only options", document.getElementById("txt-split").hidden &&
+      document.getElementById("dl-group").hidden);
 
     ok("no js errors", window.__errors.length === 0, window.__errors.join(" | "));
    } catch (e) {

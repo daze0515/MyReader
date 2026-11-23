@@ -210,13 +210,43 @@
     return head;
   }
 
+  // 插图（本地 EPUB）：宿主给出 {img, alt, w, h}。有宽高就先按比例把位置占好，
+  // 图片晚到也不会把下面的文字往下推（上方章节的插图加载完不会让阅读位置跳动）
+  function chapterFigure(it) {
+    const fig = document.createElement("figure");
+    fig.className = "para-img";
+    const img = document.createElement("img");
+    img.alt = it.alt || "";
+    img.decoding = "async";
+    img.loading = "lazy";
+    const w = it.w | 0, h = it.h | 0;
+    if (w > 0 && h > 0) {
+      img.width = w;
+      img.height = h;
+      img.style.aspectRatio = w + " / " + h;
+      img.style.width = "min(100%, " + w + "px, calc(80vh * " + (w / h).toFixed(4) + "))";
+    }
+    img.addEventListener("error", () => {
+      fig.classList.add("broken");
+      fig.textContent = it.alt ? "［插图：" + conv(it.alt) + "］" : "［插图加载失败］";
+    });
+    img.src = it.img;
+    fig.appendChild(img);
+    return fig;
+  }
+
   function chapterBody(paras) {
     const body = document.createElement("div");
     body.className = "chapter-body";
     const frag = document.createDocumentFragment();
     for (let k = 0; k < paras.length; k++) {
+      const it = paras[k];
+      if (it && typeof it === "object") {
+        if (it.img) frag.appendChild(chapterFigure(it));
+        continue;
+      }
       const p = document.createElement("p");
-      p.textContent = conv(paras[k]);
+      p.textContent = conv(it);
       frag.appendChild(p);
     }
     body.appendChild(frag);
@@ -825,7 +855,8 @@
       if (it.kind === "local") {
         const badge = document.createElement("span");
         badge.className = "book-badge";
-        badge.textContent = "本地";
+        const format = /\.(epub|mobi|azw3|azw)$/i.exec(it.localPath || "");
+        badge.textContent = format ? format[1].toUpperCase() : "本地";
         badge.title = it.localPath || "";
         t.appendChild(badge);
       }
@@ -1137,11 +1168,18 @@
     renderClear();
   }
 
+  function localFormatLabel(format) {
+    if (format === "epub") return "本地 EPUB";
+    if (format === "mobi") return "本地 MOBI";
+    return "本地 TXT";
+  }
+
   function syncTools() {
     const local = !!(book && book.kind === "local");
     $("txt-group").hidden = !local;
     $("dl-group").hidden = !book || local;
-    $("tools-sub").textContent = !book ? "未打开书籍" : (local ? "本地 TXT" : conv(book.meta.title || "网页小说"));
+    const localLabel = localFormatLabel(book && book.meta && book.meta.format);
+    $("tools-sub").textContent = !book ? "未打开书籍" : (local ? localLabel : conv(book.meta.title || "网页小说"));
     const total = book ? book.total : 1;
     ["dl-from", "dl-to", "ex-from", "ex-to", "clr-from", "clr-to"].forEach((id) => {
       const el = $(id);
@@ -1164,9 +1202,17 @@
 
   function onTxtInfo(m) {
     const req = m.requested || "auto";
+    const structured = m.format === "epub" || m.format === "mobi";
+    const setText = (id, text) => { const el = $(id); if (el) el.textContent = text; };
+    setText("txt-group-title", localFormatLabel(m.format));
+    setText("txt-enc-label", structured ? "作者" : "编码");
+    const split = $("txt-split");
+    if (split) split.hidden = structured;
     $("txt-path").textContent = m.path || "—";
     $("txt-path").title = m.path || "";
-    $("txt-enc-info").textContent = (m.encoding || "?") + (req === "auto" ? "（自动识别）" : "（手动指定）");
+    $("txt-enc-info").textContent = structured
+      ? (m.author || "未知")
+      : (m.encoding || "?") + (req === "auto" ? "（自动识别）" : "（手动指定）");
     $("txt-count").textContent = (m.chapters | 0) + " 章";
     $("txt-enc").value = req;
     $("txt-regex").value = m.regex || "";
@@ -1176,7 +1222,7 @@
     if (s.length) {
       const lab = document.createElement("div");
       lab.className = "samples-label";
-      lab.textContent = "识别到的前几章";
+      lab.textContent = structured ? "目录里的前几章" : "识别到的前几章";
       box.appendChild(lab);
       s.forEach((t) => {
         const d = document.createElement("div");

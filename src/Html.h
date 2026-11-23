@@ -19,7 +19,7 @@ class HtmlDoc {
 public:
   std::unique_ptr<HtmlNode> root;
 
-  static HtmlDoc Parse(const std::string& html);
+  static HtmlDoc Parse(const std::string& html, size_t maxDepth = 0);
   HtmlNode* FindById(const std::string& id) const;
   void FindByClass(const std::string& cls, std::vector<HtmlNode*>& out) const;
   HtmlNode* FindFirstTag(const std::string& tag) const;

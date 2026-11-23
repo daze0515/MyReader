@@ -183,6 +183,10 @@ button { font-family: inherit; cursor: pointer; }
 }
 .chapter-body p { margin: 0 0 var(--ps); text-indent: 0; }
 body.indent .chapter-body p { text-indent: 2em; }
+.chapter-body .para-img { margin: 0.6em 0 calc(var(--ps) + 0.6em); text-align: center; text-indent: 0; }
+.chapter-body .para-img img { display: block; margin: 0 auto; max-width: 100%; height: auto; object-fit: contain; border-radius: 2px; }
+.chapter-body .para-img.broken { font-size: 13px; color: var(--muted); }
+body[data-theme="dark"] .chapter-body .para-img img { filter: brightness(0.85); }
 .chapter-sep { height: 46px; }
 
 .chapter-error { color: var(--muted); font-size: 13px; padding: 18px 0; }

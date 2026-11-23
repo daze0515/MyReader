@@ -1,6 +1,6 @@
 #include "DropTarget.h"
+#include "LocalBook.h"
 #include <shellapi.h>
-#include <cwctype>
 
 HRESULT DropTarget::QueryInterface(REFIID riid, void** ppv) {
   if (!ppv) return E_POINTER;
@@ -11,13 +11,6 @@ HRESULT DropTarget::QueryInterface(REFIID riid, void** ppv) {
     return S_OK;
   }
   return E_NOINTERFACE;
-}
-
-static bool EndsWithTxt(const std::wstring& path) {
-  if (path.size() < 4) return false;
-  std::wstring tail = path.substr(path.size() - 4);
-  for (wchar_t& c : tail) c = (wchar_t)towlower(c);
-  return tail == L".txt";
 }
 
 // 从 IDataObject 里取出 CF_HDROP 文件列表
@@ -40,17 +33,17 @@ bool DropTarget::ReadFiles(IDataObject* data, std::vector<std::wstring>& out) {
   return !out.empty();
 }
 
-bool DropTarget::HasTxt(IDataObject* data) {
+bool DropTarget::HasBook(IDataObject* data) {
   std::vector<std::wstring> files;
   if (!ReadFiles(data, files)) return false;
   for (const std::wstring& f : files) {
-    if (EndsWithTxt(f)) return true;
+    if (IsSupportedLocalPath(f)) return true;
   }
   return false;
 }
 
 HRESULT DropTarget::DragEnter(IDataObject* data, DWORD, POINTL, DWORD* effect) {
-  const bool ok = HasTxt(data);
+  const bool ok = HasBook(data);
   if (effect) *effect = ok ? DROPEFFECT_COPY : DROPEFFECT_NONE;
   if (ok != inside_) {
     inside_ = ok;
@@ -81,7 +74,7 @@ HRESULT DropTarget::Drop(IDataObject* data, DWORD, POINTL, DWORD* effect) {
   std::wstring first;
   if (ReadFiles(data, files)) {
     for (const std::wstring& f : files) {
-      if (EndsWithTxt(f)) { first = f; break; }
+      if (IsSupportedLocalPath(f)) { first = f; break; }
     }
   }
   if (effect) *effect = first.empty() ? DROPEFFECT_NONE : DROPEFFECT_COPY;

@@ -8,6 +8,7 @@
 #include "Store.h"
 #include "DropTarget.h"
 #include "TxtBook.h"
+#include "EpubBook.h"
 #include <shellapi.h>
 #include <ole2.h>
 #include <wrl.h>
@@ -83,13 +84,18 @@ private:
   void ProbeCoverImage();
   void SaveCover(const std::string& bookId, const std::string& dataUrl);
 
-  // ---- 本地 TXT ----
+  // ---- 本地书（TXT / EPUB）----
   void ImportTxtDialog();
   void ImportTxt(const std::wstring& path, const std::string& enc, const std::string& regex, bool openAfter);
-  void OpenLocalBook(const BookRecord& rec);
+  void OpenLocalBook(const BookRecord& rec, std::unique_ptr<LocalBook> book = nullptr);
   void RescanLocalBook(const std::string& enc, const std::string& regex);
   void RelocateBook(const std::string& bookId);
   void SendTxtInfo();
+  // EPUB 自带封面：直接存成 data/covers/{bookId}.jpg，书架走同一条 covers.local
+  void CacheLocalCover(const std::string& bookId, const LocalBook& book);
+  TxtBook* Txt() const;     // 当前本地书是 TXT 时返回它，否则 nullptr
+  // EPUB 插图：阅读页请求 https://book.local/{bookId}/{包内路径}，这里直接从压缩包里取出来回给它
+  void ServeBookResource(ICoreWebView2WebResourceRequestedEventArgs* args, const std::string& uri);
 
   // ---- 离线下载 / 导出（共用一条串行任务，给用户正在读的章节让路）----
   void StartJob(bool exportJob, const std::vector<int>& indices, const Json& opts);
@@ -168,8 +174,8 @@ private:
   std::set<int> loadedOk_;
   std::function<void()> verifyAfter_;
 
-  // 本地 TXT 状态（原地引用，不复制文件）
-  std::unique_ptr<TxtBook> txt_;
+  // 本地书状态（TXT / EPUB，原地引用，不复制文件）
+  std::unique_ptr<LocalBook> local_;
   bool isLocal_ = false;
 
   struct FetchJob {
