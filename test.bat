@@ -38,6 +38,26 @@ cl /nologo /std:c++20 /utf-8 /EHsc /W4 /permissive- /DUNICODE /D_UNICODE /DNOMIN
   /link user32.lib shell32.lib ole32.lib
 if errorlevel 1 ( echo DROP TEST BUILD FAILED & popd & exit /b 1 )
 
+cl /nologo /c /O2 /MT /W3 /D_CRT_SECURE_NO_WARNINGS /DMINIZ_NO_ZLIB_COMPATIBLE_NAMES ^
+  /Fo:build\obj\miniz_test.obj third_party\miniz\miniz.c
+if errorlevel 1 ( echo MINIZ TEST BUILD FAILED & popd & exit /b 1 )
+
+cl /nologo /std:c++20 /utf-8 /EHsc /W4 /permissive- /DUNICODE /D_UNICODE /DNOMINMAX /O2 /MT ^
+  /Fo:build\obj\ ^
+  tests\epub_test.cpp src\Common.cpp src\Html.cpp src\Extract.cpp src\Json.cpp src\TxtBook.cpp src\Zip.cpp src\EpubBook.cpp ^
+  build\obj\miniz_test.obj ^
+  /Fe:build\epub_test.exe ^
+  /link user32.lib
+if errorlevel 1 ( echo EPUB TEST BUILD FAILED & popd & exit /b 1 )
+
+cl /nologo /std:c++20 /utf-8 /EHsc /W4 /permissive- /DUNICODE /D_UNICODE /DNOMINMAX /O2 /MT ^
+  /Fo:build\obj\ ^
+  tests\mobi_test.cpp src\Common.cpp src\Html.cpp src\Extract.cpp src\Json.cpp src\TxtBook.cpp src\Zip.cpp src\EpubBook.cpp src\MobiBook.cpp ^
+  build\obj\miniz_test.obj ^
+  /Fe:build\mobi_test.exe ^
+  /link user32.lib
+if errorlevel 1 ( echo MOBI TEST BUILD FAILED & popd & exit /b 1 )
+
 echo === SITEADAPTER SELFTEST ===
 build\adapter_test.exe
 if exist testdata\twkan_book_index.html (
@@ -56,7 +76,15 @@ echo === TXT SAMPLE UTF8 ===
 build\txt_test.exe tests\sample_utf8.txt
 echo === TXT SAMPLE GBK ===
 build\txt_test.exe tests\sample_gbk.txt
+echo === EPUB SELFTEST ===
+build\epub_test.exe --selftest
+echo === EPUB SAMPLE ===
+build\epub_test.exe tests\sample_epub2.epub
+echo === MOBI SELFTEST ===
+build\mobi_test.exe --selftest
+if errorlevel 1 ( popd & exit /b 1 )
 echo === DROPTARGET SELFTEST ===
 build\droptest.exe
+if errorlevel 1 ( popd & exit /b 1 )
 popd
 exit /b 0

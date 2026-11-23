@@ -1,11 +1,14 @@
 #include "App.h"
+#include "MobiBook.h"
 #include <WebView2EnvironmentOptions.h>
 #include <commdlg.h>
+#include <shlwapi.h>
 #include <shellapi.h>
 #include <thread>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <algorithm>
 
@@ -197,6 +200,22 @@ void App::CreateWebView() {
                   L"covers.local", coversDir.c_str(),
                   COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
               }
+              // EPUB 插图不解压到磁盘：拦下 book.local 的请求，直接从内存里的压缩包取图回给页面
+              webview_->AddWebResourceRequestedFilter(L"https://book.local/*",
+                                                      COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+              EventRegistrationToken resTok = {};
+              webview_->add_WebResourceRequested(
+                Callback<ICoreWebView2WebResourceRequestedEventHandler>(
+                  [this](ICoreWebView2*, ICoreWebView2WebResourceRequestedEventArgs* args) -> HRESULT {
+                    ComPtr<ICoreWebView2WebResourceRequest> req;
+                    LPWSTR uri = nullptr;
+                    if (SUCCEEDED(args->get_Request(&req)) && req && SUCCEEDED(req->get_Uri(&uri)) && uri) {
+                      const std::string u = W2U(uri);
+                      CoTaskMemFree(uri);
+                      ServeBookResource(args, u);
+                    }
+                    return S_OK;
+                  }).Get(), &resTok);
               CreateFetchView();
               webview_->Navigate(L"https://reader.local/index.html");
               return S_OK;
@@ -320,7 +339,8 @@ void App::SendMeta() {
   m["status"] = Json::Str(meta_.status);
   m["url"] = Json::Str(bookUrl_);
   m["kind"] = Json::Str(isLocal_ ? "local" : "web");
-  m["localPath"] = Json::Str(isLocal_ && txt_ ? W2U(txt_->PathW()) : std::string());
+  m["localPath"] = Json::Str(isLocal_ && local_ ? W2U(local_->PathW()) : std::string());
+  m["format"] = Json::Str(isLocal_ && local_ ? std::string(local_->Format()) : std::string("web"));
   j["meta"] = m;
   PostJson(j);
 }
@@ -339,7 +359,8 @@ void App::SendBook(int resumeIndex, double resumeRatio) {
   m["status"] = Json::Str(meta_.status);
   m["url"] = Json::Str(bookUrl_);
   m["kind"] = Json::Str(isLocal_ ? "local" : "web");
-  m["localPath"] = Json::Str(isLocal_ && txt_ ? W2U(txt_->PathW()) : std::string());
+  m["localPath"] = Json::Str(isLocal_ && local_ ? W2U(local_->PathW()) : std::string());
+  m["format"] = Json::Str(isLocal_ && local_ ? std::string(local_->Format()) : std::string("web"));
   j["meta"] = m;
   j["kind"] = Json::Str(isLocal_ ? "local" : "web");
   j["total"] = Json::Num((double)(int)toc_.size());
@@ -361,7 +382,22 @@ void App::SendChapter(int index, const std::string& title,
   j["total"] = Json::Num((double)(int)toc_.size());
   j["cached"] = Json::Bool(cached);
   Json arr = Json::Arr();
-  for (auto& p : paragraphs) arr.Push(Json::Str(p));
+  const LocalBook* book = isLocal_ ? local_.get() : nullptr;
+  for (auto& p : paragraphs) {
+    std::string path, alt;
+    if (!ParseLocalImagePara(p, &path, &alt)) { arr.Push(Json::Str(p)); continue; }
+    if (!book) continue;
+    // 插图：阅读页按 book.local 地址取图；宽高先给出去，图还没加载完版面就留好，翻章时不跳
+    Json o = Json::Obj();
+    o["img"] = Json::Str("https://book.local/" + meta_.bookId + "/" + EpubUrlEncodePath(path));
+    o["alt"] = Json::Str(alt);
+    int w = 0, h = 0;
+    if (book->ImageSize(path, w, h)) {
+      o["w"] = Json::Num(w);
+      o["h"] = Json::Num(h);
+    }
+    arr.Push(o);
+  }
   j["paragraphs"] = arr;
   PostJson(j);
 }
@@ -496,7 +532,7 @@ void App::OpenBookUrl(const std::string& rawUrl) {
   loadedOk_.clear();
   { std::lock_guard<std::mutex> lk(inflightMu_); healTried_.clear(); }
   isLocal_ = false;
-  txt_.reset();
+  local_.reset();
   StopJob("idle");
   SendStatus("正在获取目录…", true);
   FetchToc();
@@ -887,9 +923,9 @@ void App::FetchChapter(int index) {
     PostJson(j);
     return;
   }
-  if (isLocal_ && txt_) {
+  if (isLocal_ && local_) {
     std::vector<std::string> paras;
-    txt_->GetChapter(index, paras);
+    local_->GetChapter(index, paras);
     SendChapter(index, toc_[index].title, paras, true);
     return;
   }
@@ -1133,7 +1169,7 @@ void App::OnWebMessage(const std::wstring& rawJson) {
   } else if (type == "rescanTxt") {
     RescanLocalBook(j.GetStr("encoding", "auto"), j.GetStr("regex"));
   } else if (type == "download") {
-    if (isLocal_) { SendError("本地 TXT 不用下载"); return; }
+    if (isLocal_) { SendError("本地书不用下载"); return; }
     if (toc_.empty() || meta_.bookId.empty()) { SendError("先打开一本书"); return; }
     std::vector<int> idx = BuildRange(j, (int)toc_.size(), currentIndex_ < 0 ? 0 : currentIndex_);
     if (idx.empty()) { SendError("下载范围为空"); return; }
@@ -1170,7 +1206,11 @@ void App::OnWebMessage(const std::wstring& rawJson) {
   }
 }
 
-// ---------- 本地 TXT：文件对话框与导入 ----------
+// ---------- 本地书：文件对话框与导入 ----------
+static const wchar_t* kOpenFilter =
+  L"小说文件 (*.txt;*.epub;*.mobi;*.azw3;*.azw)\0*.txt;*.epub;*.mobi;*.azw3;*.azw\0"
+  L"文本文件 (*.txt)\0*.txt\0EPUB 电子书 (*.epub)\0*.epub\0"
+  L"Kindle 电子书 (*.mobi;*.azw3;*.azw)\0*.mobi;*.azw3;*.azw\0所有文件 (*.*)\0*.*\0";
 static const wchar_t* kTxtFilter = L"文本文件 (*.txt)\0*.txt\0所有文件 (*.*)\0*.*\0";
 
 std::wstring App::PickOpenFile() {
@@ -1178,10 +1218,10 @@ std::wstring App::PickOpenFile() {
   OPENFILENAMEW ofn = {};
   ofn.lStructSize = sizeof(ofn);
   ofn.hwndOwner = hwnd_;
-  ofn.lpstrFilter = kTxtFilter;
+  ofn.lpstrFilter = kOpenFilter;
   ofn.lpstrFile = buf;
   ofn.nMaxFile = 4096;
-  ofn.lpstrTitle = L"选择 TXT 小说文件";
+  ofn.lpstrTitle = L"选择本地小说文件";
   ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER;
   if (!GetOpenFileNameW(&ofn)) return L"";
   return std::wstring(buf);
@@ -1221,43 +1261,107 @@ void App::ImportTxtDialog() {
   ImportTxt(path, "auto", "", true);
 }
 
-void App::ImportTxt(const std::wstring& path, const std::string& enc, const std::string& regex, bool openAfter) {
-  auto book = std::make_unique<TxtBook>();
-  std::string err;
+static std::unique_ptr<LocalBook> LoadLocalBook(const std::wstring& path, const std::string& enc,
+                                                const std::string& regex, std::string& err) {
+  if (IsEpubPath(path)) {
+    auto epub = std::make_unique<EpubBook>();
+    if (!epub->Load(path, err)) return nullptr;
+    return epub;
+  }
+  if (IsMobiPath(path)) {
+    auto mobi = std::make_unique<MobiBook>();
+    if (!mobi->Load(path, err)) return nullptr;
+    return mobi;
+  }
+  auto txt = std::make_unique<TxtBook>();
   TxtSplitRule rule;
   rule.encoding = enc.empty() ? "auto" : enc;
   rule.regex = regex;
-  if (!book->Load(path, rule, err)) { SendError("导入失败：" + err); return; }
+  if (!txt->Load(path, rule, err)) return nullptr;
+  return txt;
+}
+
+static std::string LocalAuthor(const LocalBook& b) {
+  const std::string author = b.Author();
+  return author.empty() ? "本地文件" : author;
+}
+
+TxtBook* App::Txt() const {
+  return dynamic_cast<TxtBook*>(local_.get());
+}
+
+void App::CacheLocalCover(const std::string& bookId, const LocalBook& book) {
+  if (bookId.empty()) return;
+  const std::string_view bytes = book.CoverBytes();
+  if (bytes.size() < 64 || !CoverUrlFor(bookId).empty()) return;
+  const std::wstring dir = CoversDir();
+  EnsureDir(dir);
+  // 扩展名统一用 .jpg：PNG 封面照样能显示（浏览器按内容识别图片格式）
+  WriteFileBytes(dir + L"\\" + U2W(bookId) + L".jpg", std::string(bytes));
+}
+
+void App::ServeBookResource(ICoreWebView2WebResourceRequestedEventArgs* args, const std::string& uri) {
+  if (!env_ || !args) return;
+  static const std::string kPrefix = "https://book.local/";
+  std::string rest = (uri.compare(0, kPrefix.size(), kPrefix) == 0) ? uri.substr(kPrefix.size()) : std::string();
+  const size_t q = rest.find_first_of("?#");
+  if (q != std::string::npos) rest.resize(q);
+  const size_t slash = rest.find('/');
+
+  // 只给当前打开的本地书里的图片；书号对不上时一律 404
+  std::string bytes, mime;
+  const LocalBook* book = (isLocal_ && slash != std::string::npos && rest.substr(0, slash) == meta_.bookId)
+                            ? local_.get() : nullptr;
+  bool ok = book && book->ReadResource(EpubUrlDecode(rest.substr(slash + 1)), bytes, mime);
+  ComPtr<IStream> stream;
+  if (ok) {
+    stream.Attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes.data()), (UINT)bytes.size()));
+    ok = (stream != nullptr);
+  }
+  const std::wstring headers = ok ? (L"Content-Type: " + U2W(mime) + L"\r\nCache-Control: no-store")
+                                  : std::wstring(L"Content-Type: text/plain");
+  ComPtr<ICoreWebView2WebResourceResponse> resp;
+  env_->CreateWebResourceResponse(ok ? stream.Get() : nullptr, ok ? 200 : 404, ok ? L"OK" : L"Not Found",
+                                  headers.c_str(), &resp);
+  if (resp) args->put_Response(resp.Get());
+}
+
+void App::ImportTxt(const std::wstring& path, const std::string& enc, const std::string& regex, bool openAfter) {
+  std::string err;
+  std::unique_ptr<LocalBook> book = LoadLocalBook(path, enc, regex, err);
+  if (!book) { SendError("导入失败：" + err); return; }
+  const auto* txt = dynamic_cast<const TxtBook*>(book.get());
 
   const std::string id = LocalBookId(path);
   BookRecord& b = store_.Upsert(id);
   b.kind = "local";
   b.localPath = W2U(path);
-  b.txtEncoding = rule.encoding;
-  b.txtRegex = regex;
+  b.txtEncoding = txt && !enc.empty() ? enc : "auto";
+  b.txtRegex = txt ? regex : "";
   b.title = book->Title();
-  b.author = "本地文件";
-  b.category = "本地 TXT";
+  b.author = LocalAuthor(*book);
+  b.category = book->Category();
   b.status = "";
   b.cover = "";
   b.url = "file:///" + b.localPath;
-  b.total = (int)book->Chapters().size();
+  b.total = book->ChapterCount();
   if (b.chapterIndex < 0 || b.chapterIndex >= b.total) b.chapterIndex = 0;
   b.updatedAt = (int64_t)time(nullptr);
+  CacheLocalCover(id, *book);
   store_.SaveBookshelf();
   SendBooks();
 
+  const std::string how = txt ? "编码 " + txt->Encoding() : b.category;
   Json t = Json::Obj();
   t["type"] = Json::Str("toast");
-  t["text"] = Json::Str("已导入《" + b.title + "》，识别到 " + std::to_string(b.total) +
-                        " 章（编码 " + book->Encoding() + "）");
+  t["text"] = Json::Str("已导入《" + b.title + "》，识别到 " + std::to_string(b.total) + " 章（" + how + "）");
   PostJson(t);
-  if (openAfter) OpenLocalBook(b);
+  if (openAfter) OpenLocalBook(b, std::move(book));
 }
 
-void App::OpenLocalBook(const BookRecord& rec) {
+void App::OpenLocalBook(const BookRecord& rec, std::unique_ptr<LocalBook> book) {
   isLocal_ = true;
-  txt_.reset();
+  local_.reset();
   toc_.clear();
   meta_ = BookMeta();
   currentIndex_ = -1;
@@ -1266,29 +1370,31 @@ void App::OpenLocalBook(const BookRecord& rec) {
   { std::lock_guard<std::mutex> lk(inflightMu_); healTried_.clear(); }
   StopJob("idle");
 
-  auto book = std::make_unique<TxtBook>();
+  const std::wstring pathW = U2W(rec.localPath);
   std::string err;
-  TxtSplitRule rule;
-  rule.encoding = rec.txtEncoding.empty() ? "auto" : rec.txtEncoding;
-  rule.regex = rec.txtRegex;
-  if (!book->Load(U2W(rec.localPath), rule, err)) {
+  if (!book) book = LoadLocalBook(pathW, rec.txtEncoding, rec.txtRegex, err);
+  if (!book) {
     SendError("打开失败：" + err);
-    Json j = Json::Obj();
-    j["type"] = Json::Str("needRelocate");
-    j["bookId"] = Json::Str(rec.bookId);
-    j["path"] = Json::Str(rec.localPath);
-    PostJson(j);
+    // 文件还在、只是解析失败（比如 EPUB 带 DRM）时不提示「重新定位」
+    if (GetFileAttributesW(pathW.c_str()) == INVALID_FILE_ATTRIBUTES) {
+      Json j = Json::Obj();
+      j["type"] = Json::Str("needRelocate");
+      j["bookId"] = Json::Str(rec.bookId);
+      j["path"] = Json::Str(rec.localPath);
+      PostJson(j);
+    }
     return;
   }
-  txt_ = std::move(book);
+  local_ = std::move(book);
   bookUrl_ = "file:///" + rec.localPath;
   meta_.bookId = rec.bookId;
-  meta_.title = txt_->Title();
-  meta_.author = "本地文件";
-  meta_.category = "本地 TXT";
-  for (const auto& c : txt_->Chapters()) {
+  meta_.title = local_->Title();
+  meta_.author = LocalAuthor(*local_);
+  meta_.category = local_->Category();
+  CacheLocalCover(rec.bookId, *local_);
+  for (int i = 0; i < local_->ChapterCount(); ++i) {
     TocEntry e;
-    e.title = c.title;
+    e.title = local_->ChapterTitle(i);
     toc_.push_back(std::move(e));
   }
 
@@ -1305,40 +1411,47 @@ void App::OpenLocalBook(const BookRecord& rec) {
 }
 
 void App::SendTxtInfo() {
-  if (!isLocal_ || !txt_) return;
+  if (!isLocal_ || !local_) return;
+  const TxtBook* txt = Txt();
   Json j = Json::Obj();
   j["type"] = Json::Str("txtInfo");
   j["bookId"] = Json::Str(meta_.bookId);
-  j["path"] = Json::Str(W2U(txt_->PathW()));
-  j["encoding"] = Json::Str(txt_->Encoding());
-  j["requested"] = Json::Str(txt_->RequestedEncoding());
-  j["regex"] = Json::Str(txt_->Rule());
-  j["chapters"] = Json::Num((double)(int)txt_->Chapters().size());
+  j["format"] = Json::Str(std::string(local_->Format()));
+  j["path"] = Json::Str(W2U(local_->PathW()));
+  j["encoding"] = Json::Str(txt ? txt->Encoding() : std::string());
+  j["requested"] = Json::Str(txt ? txt->RequestedEncoding() : std::string("auto"));
+  j["regex"] = Json::Str(txt ? txt->Rule() : std::string());
+  j["author"] = Json::Str(local_->Author());
+  const int n = local_->ChapterCount();
+  j["chapters"] = Json::Num((double)n);
   Json arr = Json::Arr();
-  const auto& chs = txt_->Chapters();
-  for (size_t i = 0; i < chs.size() && i < 6; ++i) arr.Push(Json::Str(chs[i].title));
+  for (int i = 0; i < n && i < 6; ++i) arr.Push(Json::Str(local_->ChapterTitle(i)));
   j["samples"] = arr;
   PostJson(j);
 }
 
 void App::RescanLocalBook(const std::string& enc, const std::string& regex) {
-  if (!isLocal_ || !txt_) { SendError("当前不是本地 TXT 书"); return; }
+  TxtBook* txt = isLocal_ ? Txt() : nullptr;
+  if (!txt) {
+    SendError("章节识别设置只适用于本地 TXT");
+    return;
+  }
   TxtSplitRule rule;
   rule.encoding = enc.empty() ? "auto" : enc;
   rule.regex = regex;
-  txt_->Resplit(rule);
+  txt->Resplit(rule);
 
   BookRecord* rec = store_.Find(meta_.bookId);
   if (rec) {
     rec->txtEncoding = rule.encoding;
     rec->txtRegex = regex;
-    rec->total = (int)txt_->Chapters().size();
+    rec->total = txt->ChapterCount();
     if (rec->chapterIndex >= rec->total) rec->chapterIndex = 0;
     store_.SaveBookshelf();
   }
 
   toc_.clear();
-  for (const auto& c : txt_->Chapters()) {
+  for (const auto& c : txt->Chapters()) {
     TocEntry e;
     e.title = c.title;
     toc_.push_back(std::move(e));
@@ -1360,21 +1473,21 @@ void App::RelocateBook(const std::string& bookId) {
   if (!rec) return;
   std::wstring path = PickOpenFile();
   if (path.empty()) return;
-  auto book = std::make_unique<TxtBook>();
   std::string err;
-  TxtSplitRule rule;
-  rule.encoding = rec->txtEncoding.empty() ? "auto" : rec->txtEncoding;
-  rule.regex = rec->txtRegex;
-  if (!book->Load(path, rule, err)) { SendError("重新定位失败：" + err); return; }
+  std::unique_ptr<LocalBook> book = LoadLocalBook(path, rec->txtEncoding, rec->txtRegex, err);
+  if (!book) { SendError("重新定位失败：" + err); return; }
   rec->kind = "local";
   rec->localPath = W2U(path);
   rec->title = book->Title();
-  rec->total = (int)book->Chapters().size();
+  rec->author = LocalAuthor(*book);
+  rec->category = book->Category();
+  rec->total = book->ChapterCount();
   if (rec->chapterIndex >= rec->total) rec->chapterIndex = 0;
   rec->updatedAt = (int64_t)time(nullptr);
+  CacheLocalCover(rec->bookId, *book);
   store_.SaveBookshelf();
   SendBooks();
-  OpenLocalBook(*rec);
+  OpenLocalBook(*rec, std::move(book));
 }
 
 // 拖放诊断：关键 HRESULT 与子窗口类名落盘，方便排查「拖进去没反应」
@@ -1433,12 +1546,10 @@ void App::HandleDrop(HDROP drop) {
     wchar_t buf[4096] = {};
     if (!DragQueryFileW(drop, i, buf, 4096)) continue;
     std::wstring p = buf;
-    std::wstring low = p;
-    for (auto& ch : low) ch = (wchar_t)towlower(ch);
-    if (low.size() >= 4 && low.compare(low.size() - 4, 4, L".txt") == 0) { first = p; break; }
+    if (IsSupportedLocalPath(p)) { first = p; break; }
   }
   DragFinish(drop);
-  if (first.empty()) { SendError("只支持拖入 .txt 文件"); return; }
+  if (first.empty()) { SendError("支持拖入 .txt / .epub / .mobi / .azw3 / .azw 文件"); return; }
   ImportTxt(first, "auto", "", true);
 }
 
@@ -1581,7 +1692,7 @@ void App::SendCacheInfo() {
 
 // 清理已下载的章节缓存。目录（toc.json）保留，清完照样能离线打开这本书
 void App::ClearCache(const Json& o) {
-  if (isLocal_ || meta_.bookId.empty()) { SendError("本地 TXT 没有章节缓存"); return; }
+  if (isLocal_ || meta_.bookId.empty()) { SendError("本地书没有章节缓存"); return; }
   if (jobRunning_) { SendError("有下载任务在进行中，先暂停再清理"); return; }
   const std::string scope = o.GetStr("scope", "all");
   const std::vector<Store::CachedChapter> all = store_.CachedChapters(meta_.bookId);
@@ -1752,10 +1863,12 @@ bool App::LoadBookContext(const std::string& bookId, ExportCtx& ctx) {
     ctx.title = meta_.title;
     ctx.local = isLocal_;
     ctx.toc = toc_;
-    if (isLocal_ && txt_) {
-      ctx.localPath = txt_->PathW();
-      ctx.txtEncoding = txt_->RequestedEncoding();
-      ctx.txtRegex = txt_->Rule();
+    if (isLocal_ && local_) {
+      ctx.localPath = local_->PathW();
+      if (const TxtBook* txt = Txt()) {
+        ctx.txtEncoding = txt->RequestedEncoding();
+        ctx.txtRegex = txt->Rule();
+      }
     }
     return true;
   }
@@ -1789,18 +1902,15 @@ bool App::LoadBookContext(const std::string& bookId, ExportCtx& ctx) {
     }
   }
   if (ctx.toc.empty() && ctx.local) {
-    TxtBook book;
     std::string err;
-    TxtSplitRule rule;
-    rule.encoding = ctx.txtEncoding;
-    rule.regex = ctx.txtRegex;
-    if (book.Load(ctx.localPath, rule, err)) {
-      for (const auto& c : book.Chapters()) {
+    std::unique_ptr<LocalBook> book = LoadLocalBook(ctx.localPath, ctx.txtEncoding, ctx.txtRegex, err);
+    if (book) {
+      for (int i = 0; i < book->ChapterCount(); ++i) {
         TocEntry t;
-        t.title = c.title;
+        t.title = book->ChapterTitle(i);
         ctx.toc.push_back(std::move(t));
       }
-      if (ctx.title.empty()) ctx.title = book.Title();
+      if (ctx.title.empty()) ctx.title = book->Title();
     }
   }
   return !ctx.toc.empty();
@@ -1865,22 +1975,23 @@ bool App::GatherChapters(const ExportCtx& ctx, const std::vector<int>& indices,
   out.clear();
   skipped = 0;
   if (ctx.local) {
-    TxtBook temp;
-    const TxtBook* live = (txt_ && txt_->PathW() == ctx.localPath) ? txt_.get() : nullptr;
+    std::unique_ptr<LocalBook> temp;
+    const LocalBook* live = (local_ && local_->PathW() == ctx.localPath) ? local_.get() : nullptr;
     if (!live) {
-      TxtSplitRule rule;
-      rule.encoding = ctx.txtEncoding;
-      rule.regex = ctx.txtRegex;
       std::string err;
-      if (!temp.Load(ctx.localPath, rule, err)) return false;
-      live = &temp;
+      temp = LoadLocalBook(ctx.localPath, ctx.txtEncoding, ctx.txtRegex, err);
+      if (!temp) return false;
+      live = temp.get();
     }
-    const auto& chs = live->Chapters();
+    const int n = live->ChapterCount();
     for (int i : indices) {
-      if (i < 0 || i >= (int)chs.size()) { ++skipped; continue; }
+      if (i < 0 || i >= n) { ++skipped; continue; }
       ExportChapter c;
-      c.title = chs[i].title;
+      c.title = live->ChapterTitle(i);
       live->GetChapter(i, c.paragraphs);
+      // 导出 TXT 只要文字，插图段落去掉
+      c.paragraphs.erase(std::remove_if(c.paragraphs.begin(), c.paragraphs.end(), IsLocalImagePara),
+                         c.paragraphs.end());
       out.push_back(std::move(c));
     }
     return true;

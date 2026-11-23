@@ -2,7 +2,7 @@
 
 [中文 README](README.md)
 
-A Windows desktop novel reader: a C++ / Win32 + WebView2 host with a local HTML/JS reading UI. Reads online novel sites and local TXT files, with built-in watermark cleaning, Traditional-to-Simplified Chinese conversion, offline download, and TXT export.
+A Windows desktop novel reader with a C++ / Win32 and WebView2 host and a local HTML/JS reading UI. Reads online novels and local TXT, EPUB, and Kindle ebooks, with watermark cleaning, Traditional-to-Simplified Chinese conversion, offline download, and TXT export.
 
 ## Features
 
@@ -11,6 +11,8 @@ A Windows desktop novel reader: a C++ / Win32 + WebView2 host with a local HTML/
 - **Watermark cleaning**: character whitelist + ad-line detection removes obfuscated characters and promo lines injected into chapter text
 - **Traditional → Simplified**: built-in OpenCC mapping, Simplified by default, "keep original" available
 - **Local TXT**: drag & drop or import from the bookshelf; automatic chapter splitting (custom regex supported), encoding detection (UTF-8 / GBK / UTF-16), and relocation if the file moves
+- **Local EPUB** supports EPUB2 and EPUB3 chapters, metadata, covers, and illustrations.
+- **Local MOBI / AZW3 / AZW** supports MOBI6, KF8, and hybrid files, with chapters, metadata, covers, and illustrations. The reader accepts uncompressed and PalmDOC-compressed files. DRM, HUFF/CDIC, KFX, and Kindle Print Replica are outside the supported format range.
 - **Offline download**: whole book / next N chapters / custom range, resumable, adjustable pacing, auto-pause on verification
 - **TXT export**: range / encoding / titles / Simplified conversion options
 - **Reading experience**: themes, font, size, line/paragraph/letter spacing, page width; keyboard-driven scrolling; seamless next-chapter append; progress memory; virtualized TOC (thousands of chapters stay smooth); local cover cache

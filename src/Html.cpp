@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cctype>
+#include <string_view>
 
 const std::string* HtmlNode::Attr(const std::string& name) const {
   for (auto& kv : attrs) if (kv.first == name) return &kv.second;
@@ -33,6 +34,8 @@ static bool IsRawTextTag(const std::string& t) {
 namespace {
 struct Builder {
   HtmlNode* cur = nullptr;
+  size_t depth = 0;
+  size_t maxDepth = 0;
   void AddText(const std::string& raw) {
     if (raw.empty()) return;
     auto n = std::make_unique<HtmlNode>();
@@ -40,21 +43,26 @@ struct Builder {
     n->parent = cur;
     cur->children.push_back(std::move(n));
   }
-  void Push(HtmlNode* n) {
+  void Push(std::unique_ptr<HtmlNode> n, bool open) {
     n->parent = cur;
-    cur->children.push_back(std::unique_ptr<HtmlNode>(n));
-    cur = n;
+    HtmlNode* child = n.get();
+    cur->children.push_back(std::move(n));
+    if (open && (!maxDepth || depth < maxDepth)) {
+      cur = child;
+      ++depth;
+    }
   }
 };
 }
 
-HtmlDoc HtmlDoc::Parse(const std::string& html) {
+HtmlDoc HtmlDoc::Parse(const std::string& html, size_t maxDepth) {
   HtmlDoc doc;
   doc.root = std::make_unique<HtmlNode>();
   doc.root->tag = "#document";
 
   Builder b;
   b.cur = doc.root.get();
+  b.maxDepth = maxDepth;
 
   const size_t n = html.size();
   size_t i = 0;
@@ -79,8 +87,15 @@ HtmlDoc HtmlDoc::Parse(const std::string& html) {
       if (e == std::string::npos) break;
       std::string name = ToLowerAscii(TrimAscii(html.substr(i + 2, e - i - 2)));
       HtmlNode* p = b.cur;
-      while (p && p != doc.root.get() && p->tag != name) p = p->parent;
-      if (p && p != doc.root.get()) b.cur = p->parent;
+      size_t depth = b.depth;
+      while (depth > 0 && p->tag != name) {
+        p = p->parent;
+        --depth;
+      }
+      if (depth > 0) {
+        b.cur = p->parent;
+        b.depth = depth - 1;
+      }
       i = e + 1;
       continue;
     }
@@ -149,9 +164,7 @@ HtmlDoc HtmlDoc::Parse(const std::string& html) {
       raw->text = html.substr(i, (found == std::string::npos ? n : found) - i);
       raw->parent = node.get();
       node->children.push_back(std::move(raw));
-      HtmlNode* np = node.get();
-      b.Push(node.release());
-      b.cur = np->parent;
+      b.Push(std::move(node), false);
       if (found == std::string::npos) { i = n; }
       else {
         size_t gt = html.find('>', found);
@@ -160,10 +173,7 @@ HtmlDoc HtmlDoc::Parse(const std::string& html) {
       continue;
     }
 
-    bool leaf = IsVoidTag(tag) || selfClose;
-    HtmlNode* np = node.get();
-    b.Push(node.release());
-    if (leaf) b.cur = np->parent;
+    b.Push(std::move(node), !IsVoidTag(tag) && !selfClose);
   }
 
   return doc;
@@ -214,9 +224,10 @@ std::string HtmlDecode(const std::string& s) {
   size_t i = 0;
   while (i < s.size()) {
     if (s[i] != '&') { out.push_back(s[i++]); continue; }
-    size_t sc = s.find(';', i);
-    if (sc == std::string::npos || sc - i > 12) { out.push_back(s[i++]); continue; }
-    std::string name = s.substr(i + 1, sc - i - 1);
+    const size_t end = std::string_view(s).substr(i + 1, 12).find(';');
+    if (end == std::string_view::npos) { out.push_back(s[i++]); continue; }
+    const size_t sc = i + 1 + end;
+    std::string name = s.substr(i + 1, end);
     if (!name.empty() && name[0] == '#') {
       uint32_t cp = 0;
       if (name.size() > 1 && (name[1] == 'x' || name[1] == 'X'))

@@ -25,11 +25,17 @@ if not exist build\obj mkdir build\obj
 rc /nologo /c 65001 /Fo build\app.res src\app.rc
 if errorlevel 1 ( echo RESOURCE BUILD FAILED & popd & exit /b 1 )
 
+rem miniz (third_party, plain C) is compiled on its own, without /W4
+cl /nologo /c /O2 /GL /Gy /MT /W3 /D_CRT_SECURE_NO_WARNINGS /DMINIZ_NO_ZLIB_COMPATIBLE_NAMES ^
+  /Fo:build\obj\miniz.obj third_party\miniz\miniz.c
+if errorlevel 1 ( echo MINIZ BUILD FAILED & popd & exit /b 1 )
+
 cl /nologo /std:c++20 /utf-8 /EHsc /W4 /permissive- /DUNICODE /D_UNICODE /DNOMINMAX /O2 /GL /Gy /MT ^
   /I"%WV2%\include" ^
   /Fo:build\obj\ ^
   src\Common.cpp src\Json.cpp src\Html.cpp src\Http.cpp src\Extract.cpp src\Store.cpp ^
-  src\TxtBook.cpp src\Export.cpp src\S2T.cpp src\DropTarget.cpp src\SiteAdapter.cpp src\App.cpp src\main.cpp ^
+  src\TxtBook.cpp src\Zip.cpp src\EpubBook.cpp src\MobiBook.cpp src\Export.cpp src\S2T.cpp src\DropTarget.cpp src\SiteAdapter.cpp src\App.cpp src\main.cpp ^
+  build\obj\miniz.obj ^
   /Fe:build\Reader.exe ^
   /link /SUBSYSTEM:WINDOWS /LTCG /OPT:REF /OPT:ICF ^
   build\app.res ^

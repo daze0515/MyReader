@@ -1,7 +1,7 @@
 # 网页小说阅读器 · 方案 v0.9
 
 目标站点：https://twkan.com （台灣小說網）、https://www.69shuba.com （69书吧），均需代理访问。
-参考 UI：起点中文网阅读页（reader/8c771128-edfa-4088-89bd-746374b8e15a.png）。
+参考 UI：起点中文网阅读页。
 实测样本：reader/testdata/
 
 ---
@@ -15,8 +15,7 @@
 | 真实（非 headless）浏览器 | 能通过，由**用户手动点击**完成验证 |
 | 通过后用 Cookie 走普通 HTTP | **已失效**（2026-10-19 实测）：同一出口 IP、同一 UA、带上浏览器刚拿到的 cf_clearance，WinHTTP 与 curl 仍返回 403，而同一时刻浏览器直接 200 |
 | 结论 | CF 把放行绑在**浏览器指纹**上（TLS/HTTP2 指纹 + 头序），cf_clearance 只在浏览器里有效 |
-| 是否必须走代理 | 是。直连超时；系统代理 127.0.0.1:3067 正常 |
-| 系统代理是否已配置 | 是。注册表 ProxyEnable=1，ProxyServer=127.0.0.1:3067 |
+| 代理环境下是否可访问 | 测试环境直连超时，使用系统代理后可访问 |
 
 核心结论：**验证和抓取都必须走 WebView2 浏览器会话；WinHTTP 只作为隐藏浏览器不可用时的兜底。**
 
@@ -308,6 +307,24 @@ reader/
 | 封面本地缓存：借隐藏 WebView2 直接导航到图片 → 同源 canvas 取 dataURL → 存 `data/covers/{bookId}.jpg`，前端走虚拟主机 `covers.local`（见第 20 节） | 完成，实测 67581 / 55199 落盘且书架显示本地图 |
 | 目录虚拟滚动：`.toc-inner` 撑满总高、只渲染可视窗口（`.toc-item` 绝对定位），行高由 `--toc-row-h` 一处控制 | 完成，实测 1123 章只渲染 32 行 |
 
+**v0.11 新增（本地 EPUB / 插图）**
+
+| 模块 | 状态 |
+|---|---|
+| 本地 EPUB：EPUB2 / EPUB3，nav / ncx 目录，书名·作者·封面，按锚点拆章，GBK 正文，DRM 提示（见第 22 节） | 完成，EPUB 112 项断言 |
+| 解压引入 miniz 3.1.2（`third_party/miniz/`，MIT） | 完成 |
+| `LocalBook` 统一接口：`TxtBook` / `EpubBook` 共用阅读、进度记忆、导出 TXT | 完成 |
+| EPUB 插图：插图页 / 正文插图 / 章首题图 / 生僻字图，`book.local` 从内存送图不落盘，预留宽高不跳版 | 完成，真实书实测正常 |
+| 拖放与打开对话框支持 `.epub` | 完成，DROPTARGET 29 项断言 |
+
+**v0.12 本地 MOBI / AZW3 / AZW**
+
+| 模块 | 状态 |
+|---|---|
+| MOBI6、KF8 及双格式书籍，目录、作者、封面和正文插图 | 完成 |
+| 导入、拖放、重新定位、进度记忆和 TXT 导出沿用本地书通道 | 完成 |
+| 可复现的 MOBI6、KF8 和双格式样本，接入原生和前端回归测试 | 完成 |
+
 **调试入口（仅开发用）**
 - 设环境变量 `READER_DEBUG_PORT=9336` 启动，会用 CDP 打开 WebView2 调试端口
 - `node tests/check_ui.mjs` 看阅读页状态，`node tests/diag_live2.mjs` 驱动「点开书架」全流程，`node tests/scroll_next.mjs` 模拟连续翻章
@@ -323,6 +340,8 @@ reader/
 - 字体列表改为枚举系统字体
 - 手动框选正文兜底
 - EPUB 导出（TXT 之外再加一种格式）
+- 点插图放大查看（见第 22 节末尾）
+- 其他本地格式：DOCX、HTML / HTM 成本低，可以一起做；FB2、UMD 看有没有这类书再定；CHM、PDF 不做（取舍见第 23 节末尾）
 
 ## 13. 本地 TXT 导入
 
@@ -442,3 +461,74 @@ reader/
 - **标题缓存**：`ensureTocTitles()` 按 `总章数 + 简繁` 缓存标题数组，搜索时不再每次重算 1000+ 条
 - **当前章**：`markActiveToc()` 算出当前章在过滤结果里的位置，把 `scrollTop` 居中过去再重画
 - **实测**：1123 章的目录，`.toc-inner` 高 42674px，DOM 里只有 32 个 `.toc-item`
+
+## 22. 本地 EPUB
+
+EPUB 本质是 zip 包 + XHTML 正文，所以做法是「解压 → 读 OPF → 按 spine 取正文」，最后和 TXT 一样交给阅读页。
+
+- **解压**：`third_party/miniz/`（miniz 3.1.2，MIT，单文件 C 库）。`src/Zip.{h,cpp}` 包一层只读接口：整包读进内存，按名字（不区分大小写）解压单个文件。`build.bat` 里把 `miniz.c` 单独按 C 编译成 `build\obj\miniz.obj` 再一起链接；定义了 `MINIZ_NO_ZLIB_COMPATIBLE_NAMES`，免得 `compress` / `crc32` 这些宏污染别的代码
+- **统一接口**：`src/LocalBook.h` 定义 `LocalBook`（`Format / PathW / Title / ChapterCount / ChapterTitle / GetChapter`），`TxtBook` 和 `EpubBook` 都实现它。`App` 只持有一个 `std::unique_ptr<LocalBook> local_`，阅读、进度记忆、导出 TXT 都不用区分格式；只有「章节识别（编码 / 正则）」是 TXT 专属，用 `App::Txt()` 取
+- **格式判断**：看扩展名（`.epub` / `.txt`），书架条目不加新字段，老的 `bookshelf.json` 原样可用
+- **解析流程**（`src/EpubBook.cpp`）
+  1. `META-INF/container.xml` 找 OPF；找不到就在包里找第一个 `.opf`
+  2. DRM：`encryption.xml` 里有正文（xhtml / html / opf / ncx）被加密就报「带 DRM 加密，无法打开」；只加密字体的「字体混淆」不算
+  3. OPF：`dc:title` / `dc:creator` / manifest / spine；元素按本地名匹配，`dc:` / `opf:` 前缀都认
+  4. 目录：EPUB3 `nav.xhtml`（优先 `epub:type="toc"` 那个 nav）→ 没有再读 EPUB2 `toc.ncx`（嵌套 navPoint 按前序展开）
+  5. 章节：按 spine 顺序，每个正文文件一章；目录页本身（`properties="nav"`）和没有文字的页（封面、纯插图）跳过。**一个文件里有 ≥2 个目录项且带锚点**时，按锚点切成多章，第一个锚点之前的内容并进第一章
+  6. 标题：目录标题 → 正文第一个 h1–h6 → `<title>`（和书名相同时不用）→「第 N 节」
+  7. 封面：`properties="cover-image"` → `<meta name="cover">` → 名字里带 cover 的图片；直接存成 `data/covers/{bookId}.jpg`，书架走现成的 `covers.local`
+- **正文提取**：复用 `HtmlDoc`。块级标签（p / div / h1–h6 / li / blockquote …）和 `<br>` 断段；`head / script / style / rt / rp` 整块跳过（`<rt>` 是注音）；插图见下一条。源码排版用的换行：两边是汉字时直接去掉，否则折成一个空格。正文开头和章节名相同的那行去掉（比较时忽略全角/半角空格）
+- **几个坑**
+  - XHTML 里合法的 `<title/>` 会让 `HtmlDoc` 一直找 `</title>`、把整个正文吞掉，解析前先展开成 `<title></title>`（script / style / textarea 同理）
+  - 国内不少 EPUB 正文是 GBK，沿用 TXT 的编码识别（BOM → 严格 UTF-8 → GBK）
+  - href 里的 `%20` 等转义要先解码再去 zip 里找；路径大小写不敏感
+- **插图**
+  - **识别**：`<img src>` 和 SVG 里的 `<image xlink:href>`（插图页的常见写法，SVG 里的其它内容不要）；`data:` 和外链跳过。路径按正文文件所在目录解析
+  - **成段规则**：一个块里只有图 → 每张图单独成一段；图夹在文字中间 → 多半是生僻字图片（gaiji），alt 只有一两个字就嵌回原处，否则丢掉
+  - **段落表示**：插图在 `LocalBook` 接口里仍是一个字符串段落，`\x1E img \x1F 包内路径 \x1F alt`（`MakeLocalImagePara` / `ParseLocalImagePara`，`src/LocalBook.h`）。这样导出、缓存、TXT 都不用改接口；导出 TXT 时把这类段落去掉
+  - **送图**：`SendChapter` 把插图段落换成 `{img, alt, w, h}`，`img` 是 `https://book.local/{bookId}/{%XX 转义的包内路径}`。主 WebView2 用 `AddWebResourceRequestedFilter` 拦下 `book.local` 的请求，`ServeBookResource` 直接从内存里的压缩包取图、`SHCreateMemStream` 回给页面，**不解压到磁盘**。只给当前打开那本书、只给图片类型（按文件头识别），书号对不上或不是图片一律 404
+  - **不跳版**：宿主只读文件头算出宽高（PNG / JPEG / GIF / WebP / BMP，`ImageDimensions`，结果按路径缓存），前端用 `aspect-ratio` + `width: min(100%, 原宽, 80vh × 宽高比)` 先把位置占好，图片晚到也不会把下面的文字往下推（上方章节的插图加载完不会让阅读位置跳动）；`object-fit: contain` 兜住 EXIF 旋转之类宽高对不上的情况
+  - **封面页 / 插图页**：只有图、而且图就是封面（或文件名带 cover）的页跳过（书架上已经有封面）；别的纯图片页保留成一章，没有目录标题时叫「插图」。章首有题图时，题图后面那行重复的章节名照样去掉
+  - 夜间主题下插图降一点亮度；图片加载失败显示「［插图：alt］」
+- **不做水印清洗**：出版物没有站点水印，避免误删
+- **工具抽屉**：EPUB 时「本地 TXT」分组显示为「本地 EPUB」，编码一栏换成作者，隐藏「章节识别」
+- **测试**：`tests/epub_test.cpp`（已接进 `test.bat`），样本 `tests/sample_epub3.epub`（nav 目录、封面页 / 目录页跳过、文件名带空格、实体 / 注音 / `<title/>`、SVG 插图页、章首题图、生僻字图片）和 `tests/sample_epub2.epub`（ncx 嵌套目录、按锚点拆章、GBK 正文、带 BOM 的 UTF-8）。`build\epub_test.exe 某本书.epub` 可以直接打印任意一本 EPUB 的解析结果，排查真实书用
+- **后续**：点插图放大查看
+
+## 23. 本地 MOBI / AZW3 / AZW
+
+Kindle 格式。外层是 PalmDB 记录表，正文是压缩过的 HTML，所以做法是「拆记录 → 解压 → 拼出 HTML → 交给 EPUB 那套正文提取」。
+
+- **依赖**：原生 C++ 解析，不添加运行时依赖。
+- **范围**：扩展名 `.mobi` / `.azw3` / `.azw`，`Format()` 统一返回 `"mobi"`；实现 `class MobiBook : LocalBook`（`src/MobiBook.{h,cpp}`）
+- **解析流程**
+  1. PalmDB 头 + 记录列表。0 号记录是 PalmDOC 头：压缩方式 1 = 不压缩、2 = PalmDOC（LZ77 变体）、17480 = HUFF/CDIC；正文记录数；加密字段
+  2. MOBI 头：文本编码（65001 = UTF-8，1252 = cp1252，用 `MultiByteToWideChar` 转）、首个图片记录号、EXTH 标志、额外记录数据标志。**每条正文记录解压前先剥掉记录尾部的附加数据**（multibyte 位 + 其它标志位），这是乱码最常见的来源
+  3. EXTH：100 作者、503 书名（没有就用完整书名，再没有用文件名）、201 封面（相对首个图片记录号）、121 KF8 分界
+  4. 新旧合一的 `.mobi`（EXTH 121）或 version 8 头：有 KF8 部分就优先用 KF8
+  5. **MOBI6 正文**：图片是 `<img recindex="00001">`（从 1 开始，相对首个图片记录号）；分章优先用 NCX 索引（INDX / TAGX / CNCX 的标题和偏移），解析不了就按 `<mbp:pagebreak/>` 切；标题：NCX → 第一个标题标签 →「第 N 节」
+  6. **KF8 正文（AZW3）**：按 SKEL / FRAG 索引重组正文，FDST 用来取主内容流。每个重组出的文件对应一章。正文图片通过 `kindle:embed:XXXX?mime=…` 引用（base32，从 1 开始）。章节名优先取 NCX，再回退到正文标题。跳过空页和仅有封面的页。
+  7. 正文提取复用 `EpubExtractSegments`；插图段落用合成路径（如 `rec/123`）。`ReadResource` 只给真图片（按文件头识别），资源区里的 FLIS / FCIS / SRCS / RESC / FONT / BOUNDARY / EOF 等记录要跳过；图片宽高缓存
+  8. 所有偏移和长度都做越界检查；截断或乱七八糟的文件给中文错误提示，不能崩、不能死循环
+- **限制（第一版）**
+  - 带 DRM（加密字段非 0）→「这本书带 DRM 加密，无法打开」；Kindle 商店买的书基本都有
+  - HUFF/CDIC 压缩 →「暂不支持 HUFF/CDIC 压缩的 MOBI」（少数早期的书，以后要做约再加两百行）
+  - KFX 和 Kindle Print Replica 暂不支持。
+  - 文件上限 256 MiB，解压后的正文上限 128 MiB，单章上限 16 MiB。
+- **接入现有代码**
+  - `LocalBook` 提供统一的分类、作者、封面和图片接口，EPUB 与 MOBI 都通过 `book.local` 提供正文插图。
+  - 文件对话框和拖放支持三种扩展名，书架显示文件格式。工具抽屉显示作者并隐藏 TXT 专用的章节识别设置。
+- **测试**
+  - `python tools/make_mobi_samples.py` 生成 MOBI6、AZW3 和双格式样本，覆盖压缩、记录尾部数据、NCX、KF8 分片和共享图片记录。
+  - `test.bat` 运行 MOBI 回归测试，覆盖目录、正文、插图和错误提示。也可以用 `build\mobi_test.exe 某本书.azw3` 查看文件的解析结果。
+
+**其他格式的取舍**
+
+| 格式 | 结论 | 理由 |
+|---|---|---|
+| DOCX | 做，成本低 | 也是 zip + XML，miniz 现成；按「标题 1/2」样式分章；插图走现有通道 |
+| HTML / HTM | 做，顺手 | 直接复用 EPUB 的正文提取 |
+| FB2 | 可选 | 纯 XML，`.fb2.zip` 也能用 miniz 解；中文书少 |
+| UMD | 可选 | 老手机时代的中文格式，结构简单，正文 zlib 压缩，miniz 能解；有老书再做 |
+| CHM | 不做 | 要处理 LZX 压缩，麻烦 |
+| PDF | 不做 | 要引入很重的库；固定版面，提取出的文字常断行、乱序，不适合当小说重排阅读 |
