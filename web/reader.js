@@ -82,6 +82,7 @@
   const tocDrawer = $("toc-drawer");
   const setDrawer = $("settings-panel");
   const toolsPanel = $("tools-panel");
+  const statsDialog = $("reading-stats");
 
   /* ================= 通用 UI ================= */
   let toastTimer = 0;
@@ -114,12 +115,14 @@
 
   function drawerOpen() { return !tocDrawer.hidden || !setDrawer.hidden || !toolsPanel.hidden; }
   function closeDrawers() {
+    if (drawerOpen() && reading) statsTracker?.activity(performance.now());
     tocDrawer.hidden = true;
     setDrawer.hidden = true;
     toolsPanel.hidden = true;
     dimEl.hidden = true;
   }
   function openDrawer(el) {
+    stopStats();
     closeDrawers();
     el.hidden = false;
     dimEl.hidden = false;
@@ -141,6 +144,71 @@
   let lastTop = 0;
   let endNote = null;
   let tocQuery = "";
+
+  const statsStorage = {
+    get length() { return localStorage.length; },
+    key: (index) => localStorage.key(index),
+    getItem: (key) => localStorage.getItem(key),
+    setItem: (key, value) => localStorage.setItem(key, value)
+  };
+  const statsTracker = statsDialog ? new ReadingStats.Tracker(statsStorage, crypto.randomUUID()) : null;
+  const statsPanel = statsDialog ? createReadingStatsPanel(statsDialog, statsTracker, conv) : null;
+  const statsMetrics = new WeakMap();
+
+  function statsBook(meta) {
+    return { id: meta.bookId, title: meta.title || "未命名" };
+  }
+
+  function statsRanges() {
+    if (!reading || readerEl.hidden || drawerOpen() || statsDialog.open ||
+        document.hidden || !document.hasFocus() || pendingResume >= 0) return null;
+    const bounds = viewport.getBoundingClientRect();
+    const ranges = new Map();
+    for (let index = Math.max(lo, cur - 1); index <= hi; index++) {
+      const block = blocks.get(index);
+      if (!block) continue;
+      const chapterBounds = block.el.getBoundingClientRect();
+      if (chapterBounds.top >= bounds.bottom) break;
+      if (block.state !== "ok" || chapterBounds.bottom <= bounds.top) continue;
+      const body = block.el.querySelector(".chapter-body");
+      if (body) ranges.set(index, ReadingStats.visibleRange(body, bounds.top, bounds.bottom, statsMetrics));
+    }
+    return ranges.size ? ranges : null;
+  }
+
+  function stopStats() {
+    if (!statsTracker) return;
+    const now = performance.now();
+    statsTracker.sample(now, Date.now(), null);
+    statsTracker.flush(now);
+  }
+
+  function openStats(selectedBook) {
+    stopStats();
+    statsPanel.open(selectedBook);
+  }
+
+  function bindStats() {
+    if (!statsPanel) return;
+    const activity = () => statsTracker.activity(performance.now());
+    $("reading-stats-open").addEventListener("click", () => openStats());
+    statsDialog.addEventListener("close", activity);
+    window.addEventListener("blur", stopStats);
+    window.addEventListener("focus", activity);
+    window.addEventListener("pagehide", stopStats);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) stopStats();
+      else activity();
+    });
+    for (const type of ["wheel", "pointerdown"]) {
+      viewport.addEventListener(type, (event) => { if (event.isTrusted) activity(); }, { passive: true });
+    }
+    setInterval(() => {
+      const now = performance.now();
+      const ranges = statsTracker.isIdle(now) ? null : statsRanges();
+      statsTracker.sample(now, Date.now(), ranges);
+    }, 1000);
+  }
 
   function memGet(i) {
     const v = mem.get(i);
@@ -559,6 +627,7 @@
 
   /* ================= 键盘 ================= */
   function onKey(e) {
+    if (statsDialog?.open) return;
     if (e.ctrlKey && e.key === ",") {
       e.preventDefault();
       openDrawer(setDrawer);
@@ -570,6 +639,7 @@
       return;
     }
     if (readerEl.hidden) return;
+    if ((e.key === " " || e.key === "Spacebar") && t?.closest?.("button")) return;
     if (e.altKey || e.ctrlKey || e.metaKey) return;
 
     const vh = pageSize();
@@ -598,6 +668,7 @@
         break;
       default: return;
     }
+    if (e.isTrusted && !drawerOpen()) statsTracker?.activity(performance.now());
     pokeUi();
   }
 
@@ -868,6 +939,17 @@
       info.appendChild(t);
       info.appendChild(s);
       card.appendChild(info);
+      if (statsPanel && it.bookId) {
+        const stats = document.createElement("button");
+        stats.className = "ghost small book-stats";
+        stats.textContent = "统计";
+        stats.setAttribute("aria-label", conv(it.title || "未命名") + "的阅读统计");
+        stats.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openStats(statsBook(it));
+        });
+        card.appendChild(stats);
+      }
       const del = document.createElement("button");
       del.className = "book-del";
       del.textContent = "✕";
@@ -889,6 +971,7 @@
   }
 
   function goHome() {
+    stopStats();
     sendProgress();
     reading = false;
     post({ type: "title", text: "阅读器" });
@@ -932,6 +1015,9 @@
         else closeDrawers();
       } else if (act === "fullscreen") {
         post({ type: "fullscreen" });
+      } else if (act === "stats") {
+        closeDrawers();
+        if (book?.meta.bookId) openStats(statsBook(book.meta));
       } else if (act === "home") {
         goHome();
       }
@@ -939,7 +1025,7 @@
 
     dimEl.addEventListener("click", closeDrawers);
     document.querySelectorAll("[data-close]").forEach((b) => {
-      b.addEventListener("click", () => { $(b.dataset.close).hidden = true; dimEl.hidden = true; });
+      b.addEventListener("click", closeDrawers);
     });
 
     let tocTimer = 0;
@@ -1373,6 +1459,8 @@
   }
 
   function onBook(m) {
+    stopStats();
+    if (statsDialog?.open) statsDialog.close();
     book = {
       meta: m.meta || {},
       total: m.total | 0,
@@ -1380,6 +1468,7 @@
       kind: m.kind || "web",
       localPath: m.localPath || ""
     };
+    statsTracker?.setBook(statsBook(book.meta), performance.now());
     tocQuery = "";
     $("toc-search").value = "";
     $("toc-book").textContent = conv(book.meta.title || "目录");
@@ -1459,6 +1548,7 @@
     } else if (m.type === "meta") {
       if (book && m.meta) {
         book.meta = m.meta;
+        if (statsTracker?.book && statsTracker.book.id === m.meta.bookId) statsTracker.book = statsBook(m.meta);
         updateTopbar();
         updateTitle();
       }
@@ -1493,10 +1583,14 @@
     bindReader();
     bindPanel();
     bindTools();
+    bindStats();
     applySettings({ anchor: false });
     viewport.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("keydown", onKey, true);
-    window.addEventListener("beforeunload", () => { if (reading) sendProgress(); });
+    window.addEventListener("beforeunload", () => {
+      stopStats();
+      if (reading) sendProgress();
+    });
     if (host) host.addEventListener("message", onMessage);
     post({ type: "ready" });
   }

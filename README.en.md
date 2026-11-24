@@ -16,6 +16,7 @@ A Windows desktop novel reader with a C++ / Win32 and WebView2 host and a local 
 - **Offline download**: whole book / next N chapters / custom range, resumable, adjustable pacing, auto-pause on verification
 - **TXT export**: range / encoding / titles / Simplified conversion options
 - **Reading experience**: themes, font, size, line/paragraph/letter spacing, page width; keyboard-driven scrolling; seamless next-chapter append; progress memory; virtualized TOC (thousands of chapters stay smooth); local cover cache
+- **Reading statistics** show daily, monthly, and yearly reading time, a bar chart, and books ranked by time spent. Open a book’s statistics from the shelf or reader toolbar to see its lifetime reading time, estimated character count, and average speed. Tracking pauses outside the foreground reading view or after two minutes of inactivity. Records stay on this device.
 
 ## Keys
 

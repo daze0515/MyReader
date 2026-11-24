@@ -27,7 +27,10 @@
 
     <div class="shelf-head">
       <h2>书架</h2>
-      <button id="refresh-shelf" class="ghost small">刷新</button>
+      <div class="shelf-actions">
+        <button id="reading-stats-open" class="ghost small">阅读统计</button>
+        <button id="refresh-shelf" class="ghost small">刷新</button>
+      </div>
     </div>
     <div id="shelf" class="shelf"></div>
 
@@ -75,6 +78,7 @@
     <button class="rail-btn" data-act="theme" title="夜间"><span class="ri">◐</span><span class="rl">夜间</span></button>
     <button class="rail-btn" data-act="settings" title="设置"><span class="ri">⚙</span><span class="rl">设置</span></button>
     <button class="rail-btn" data-act="tools" title="工具"><span class="ri">⤓</span><span class="rl">工具</span></button>
+    <button class="rail-btn" data-act="stats" title="本书统计"><span class="ri stats-icon" aria-hidden="true"></span><span class="rl">统计</span></button>
     <button class="rail-btn" data-act="fullscreen" title="全屏"><span class="ri">⛶</span><span class="rl">全屏</span></button>
     <button class="rail-btn" data-act="home" title="书架"><span class="ri">⌂</span><span class="rl">书架</span></button>
   </nav>
@@ -346,7 +350,57 @@
 
 <div id="toast" class="toast" hidden></div>
 
+<dialog id="reading-stats" aria-labelledby="stats-title">
+  <header class="stats-head">
+    <h2 id="stats-title">个人阅读统计</h2>
+    <form method="dialog"><button class="ghost stats-close" autofocus>关闭</button></form>
+  </header>
+  <section id="stats-lifetime" class="stats-card" hidden>
+    <h3 id="stats-book-title"></h3>
+    <dl id="stats-total" class="stats-metrics"></dl>
+  </section>
+  <div class="stats-nav">
+    <div id="stats-periods" class="stats-segments" role="group" aria-label="统计周期">
+      <button type="button" data-period="day" aria-pressed="false">日</button>
+      <button type="button" data-period="month" aria-pressed="true">月</button>
+      <button type="button" data-period="year" aria-pressed="false">年</button>
+    </div>
+    <div class="stats-calendar">
+      <button id="stats-earlier" class="ghost" aria-label="上一周期">‹</button>
+      <strong id="stats-date" aria-live="polite"></strong>
+      <button id="stats-later" class="ghost" aria-label="下一周期">›</button>
+    </div>
+  </div>
+  <dl id="stats-summary" class="stats-card stats-metrics"></dl>
+  <p id="stats-empty" class="stats-empty" hidden>这个周期还没有阅读记录。打开一本书阅读后，时长会自动记录。</p>
+  <section id="stats-chart" class="stats-card" aria-labelledby="stats-chart-title" hidden>
+    <div class="stats-section-head">
+      <h3 id="stats-chart-title">阅读时长趋势</h3>
+      <span id="stats-axis-unit"></span>
+    </div>
+    <div class="stats-chart-plot" aria-hidden="true">
+      <div id="stats-axis" class="stats-axis"></div>
+      <div id="stats-bars" class="stats-bars"></div>
+    </div>
+    <details id="stats-chart-details">
+      <summary>查看具体时长</summary>
+      <table class="stats-table">
+        <thead><tr><th scope="col">时间</th><th scope="col">阅读时长</th></tr></thead>
+        <tbody id="stats-chart-values"></tbody>
+      </table>
+    </details>
+  </section>
+  <section id="stats-ranking" class="stats-card" aria-labelledby="stats-ranking-title" hidden>
+    <h3 id="stats-ranking-title">阅读最久的书</h3>
+    <ol id="stats-books"></ol>
+  </section>
+  <p id="stats-storage-warning" class="stats-note" role="status" hidden>部分记录暂时无法保存到本机。</p>
+  <p class="stats-note">时长按前台阅读时间记录，连续 2 分钟无操作后暂停。字数按屏幕显示的正文估算，同一次打开书籍时重复浏览的内容只计一次。累计满 1 分钟且有字数记录后显示平均速度。</p>
+</dialog>
+
 <script src="s2t.js"></script>
+<script src="reading-stats.js"></script>
+<script src="stats-panel.js"></script>
 <script src="reader.js"></script>
 </body>
 </html>
